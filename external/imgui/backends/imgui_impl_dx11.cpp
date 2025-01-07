@@ -627,4 +627,7 @@ void ImGui_ImplDX11_NewFrame()
 
 //-----------------------------------------------------------------------------
 
+#define DX11_FONT_STUB_IMPLEMENTATION
+#include "imgui_dx11_font_stub.h"
+
 #endif // #ifndef IMGUI_DISABLE

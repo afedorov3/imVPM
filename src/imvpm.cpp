@@ -57,7 +57,8 @@ Index of this file:
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
-#include "imgui.h"
+#include <imgui.h>
+#include <fonts/IconsFontAwesome6.h>
 #include "Analyzer.hpp"
 #include "AudioHandler.h"
 #include "fonts.h"
@@ -155,8 +156,10 @@ Index of this file:
 
 // CONSTANTS
 #define FONT       Font      // symbol names that was given to binary_to_compressed_c when fonts.h being created
+#define FONT_ICONS FontIcons
 #define FONT_NOTES FontMono
 static constexpr float    font_def_sz = 18.0f;  // default font size, px
+static constexpr float  font_icons_sz = 16.0f;  // icons size, px
 static constexpr float   font_grid_sz = 18.0f;  // grid font size, px
 static constexpr float  font_pitch_sz = 36.0f;  // pitch font size, px
 static constexpr float  font_tuner_sz = 16.0f;  // tuner font size, px
@@ -395,6 +398,7 @@ enum {
 
 // STATE
 static ImFont      *font_def =  nullptr;  // default font ptr
+static ImFont    *font_icons =  nullptr;  // icons font ptr
 static ImFont     *font_grid =  nullptr;  // grid font ptr
 static ImFont    *font_pitch =  nullptr;  // pitch font ptr
 static ImFont    *font_tuner =  nullptr;  // tuner font ptr
@@ -596,6 +600,16 @@ bool ImGui::AppConfig()
         0x2DE0, 0x2DFF, // Cyrillic Extended-A
         0xA640, 0xA69F, // Cyrillic Extended-B
         0x266D, 0x266F, // ♭, ♯
+        0x27F3, 0x27F3, // ⟳
+        0,
+    };
+    static const ImWchar ranges_icons[] =
+    {
+        0xF07C, 0xF07C, // folder-open
+        0xF0c9, 0xF0c9, // bars
+        0xF130, 0xF130, // microphone
+        0xF1DE, 0xF1DE, // sliders
+        0xF2F1, 0xF2F1, // rotate
         0,
     };
     static const ImWchar ranges_notes[] =
@@ -611,6 +625,13 @@ bool ImGui::AppConfig()
     io.Fonts->Clear();
 
     ADD_FONT(font_def,   ranges_ui,    FONT);
+    {
+        font_config.MergeMode = true;
+        font_config.GlyphMinAdvanceX = font_icons_sz;
+        ADD_FONT(font_icons, ranges_icons, FONT_ICONS);
+        font_config.MergeMode = false;
+        font_config.GlyphMinAdvanceX = 0;
+    }
     ADD_FONT(font_tuner, ranges_notes, FONT_NOTES);
     ADD_FONT(font_pitch, ranges_notes, FONT_NOTES);
     ADD_FONT(font_grid,  ranges_notes, FONT_NOTES);
@@ -618,6 +639,9 @@ bool ImGui::AppConfig()
     io.Fonts->Build();
     io.FontDefault = font_def;
     fonts_reloaded = true;
+
+    ImGuiStyle& style = ImGui::GetStyle(); 
+    style.FrameRounding = 5.f * scale;
 
     return true;
 }
@@ -755,26 +779,29 @@ void ShowToolbarWindow(bool* p_open)
         ImGui::Checkbox("scale chroma", &scale_chroma);
 
         {
-            ImGui::TextUnformatted("Capture device");
-            ImGui::SameLine();
             const AudioHandler::Devices &devices = audiohandler.getCaptureDevices();
-            if (ImGui::BeginCombo("##combo", devices.selectedName.c_str())) {
+            if (ImGui::BeginCombo(ICON_FA_MICROPHONE, devices.selectedName.c_str())) {
                 for (int n = 0; n < devices.list.size(); n++) {
                     bool is_selected = devices.list[n].name == devices.selectedName;
                     if (ImGui::Selectable(devices.list[n].name.c_str(), is_selected) && !is_selected)
+                    {
                         audiohandler.setPreferredCaptureDevice(devices.list[n].name.c_str());
+                        if (ah_state.isIdle())
+                            audiohandler.capture();
+                    }
                     if (is_selected)
                         ImGui::SetItemDefaultFocus();
                 }
                 ImGui::EndCombo();
             }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay))
+                ImGui::SetItemTooltip("Capture / Record device");
             audiohandler.unlockDevices();
-        }
-
-        if (ImGui::Button("Add nessage"))
-        {
-            static int msgnum = 1;
-            audiohandler.log().LogMsg(logger::LOG_WARN, "message %d", msgnum++);
+            ImGui::SameLine();
+            if (ImGui::Button(ICON_FA_ROTATE))
+                audiohandler.enumerate();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay))
+                ImGui::SetItemTooltip("Re-enumerate audio devices");
         }
      }
 
@@ -1062,7 +1089,7 @@ void ProcessLog()
 {
     constexpr size_t maxMsgs = 3;
     constexpr float msgTimeoutSec = 5.0f;
-    constexpr float faderate = msgTimeoutSec / 0.3f /* seconds */ / 2 /* fadein + fadeout */;
+    constexpr float faderate = msgTimeoutSec / 0.3f /* duration, seconds */ / 2 /* fadein + fadeout */;
 
     static unsigned long long nextN = maxMsgs;
     static float MsgTimeout[maxMsgs] = {};
