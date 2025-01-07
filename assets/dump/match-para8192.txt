@@ -1,0 +1,49 @@
+pitch: 880.01 ref 880 dHz 0.010 err% 0.02
+pitch: 830.621 ref 830.609 dHz 0.012 err% 0.02
+pitch: 784.004 ref 783.991 dHz 0.013 err% 0.03
+pitch: 740.002 ref 739.989 dHz 0.013 err% 0.03
+pitch: 698.469 ref 698.456 dHz 0.013 err% 0.03
+pitch: 659.27 ref 659.255 dHz 0.015 err% 0.04
+pitch: 622.269 ref 622.254 dHz 0.015 err% 0.04
+pitch: 587.346 ref 587.33 dHz 0.016 err% 0.05
+pitch: 554.382 ref 554.365 dHz 0.017 err% 0.05
+pitch: 523.269 ref 523.251 dHz 0.018 err% 0.06
+pitch: 493.902 ref 493.883 dHz 0.019 err% 0.07
+pitch: 466.184 ref 466.164 dHz 0.020 err% 0.08
+pitch: 440.022 ref 440 dHz 0.022 err% 0.09
+pitch: 415.328 ref 415.305 dHz 0.023 err% 0.10
+pitch: 392.02 ref 391.995 dHz 0.025 err% 0.11
+pitch: 370.02 ref 369.994 dHz 0.026 err% 0.12
+pitch: 349.256 ref 349.228 dHz 0.028 err% 0.14
+pitch: 329.657 ref 329.628 dHz 0.029 err% 0.15
+pitch: 311.158 ref 311.127 dHz 0.031 err% 0.17
+pitch: 293.698 ref 293.665 dHz 0.033 err% 0.20
+pitch: 277.218 ref 277.183 dHz 0.035 err% 0.22
+pitch: 261.664 ref 261.626 dHz 0.038 err% 0.25
+pitch: 246.982 ref 246.942 dHz 0.040 err% 0.28
+pitch: 233.125 ref 233.082 dHz 0.043 err% 0.32
+pitch: 220.046 ref 220 dHz 0.046 err% 0.36
+pitch: 207.701 ref 207.652 dHz 0.049 err% 0.41
+pitch: 196.05 ref 195.998 dHz 0.052 err% 0.46
+pitch: 185.053 ref 184.997 dHz 0.056 err% 0.52 OUT
+pitch: 174.673 ref 174.614 dHz 0.059 err% 0.59 OUT
+pitch: 164.878 ref 164.814 dHz 0.064 err% 0.67 OUT
+pitch: 155.631 ref 155.563 dHz 0.068 err% 0.76 OUT
+pitch: 146.905 ref 146.832 dHz 0.073 err% 0.86 OUT
+pitch: 138.67 ref 138.591 dHz 0.079 err% 0.98 OUT
+pitch: 130.898 ref 130.813 dHz 0.085 err% 1.12 OUT
+pitch: 123.562 ref 123.471 dHz 0.091 err% 1.28 OUT
+pitch: 116.64 ref 116.541 dHz 0.099 err% 1.47 OUT
+pitch: 110.107 ref 110 dHz 0.107 err% 1.69 OUT
+pitch: 103.943 ref 103.826 dHz 0.117 err% 1.95 OUT
+pitch: 98.1266 ref 97.999 dHz 0.128 err% 2.25 OUT
+pitch: 92.6392 ref 92.499 dHz 0.140 err% 2.62 OUT
+pitch: 87.4621 ref 87.307 dHz 0.155 err% 3.07 OUT
+pitch: 82.5798 ref 82.407 dHz 0.173 err% 3.63 OUT
+pitch: 77.9765 ref 77.782 dHz 0.195 err% 4.32 OUT
+pitch: 73.6379 ref 73.416 dHz 0.222 err% 5.23 OUT
+pitch: 69.4924 ref 69.296 dHz 0.196 err% 4.90 OUT
+pitch: 65.625 ref 65.406 dHz 0.219 err% 5.79 OUT
+pitch: 61.9808 ref 61.735 dHz 0.246 err% 6.88 OUT
+pitch: 58.4845 ref 58.27 dHz 0.215 err% 6.36 OUT
+pitch: 55.2362 ref 55 dHz 0.236 err% 7.42 OUT

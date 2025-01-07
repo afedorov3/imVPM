@@ -1,0 +1,40 @@
+{
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "cmake.exe",
+            "args": [
+                "--build",
+                ".",
+                "-j8"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\build"
+            },
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "Buld project."
+        },
+        {
+            "label": "debug",
+            "type": "shell",
+            "command": ".\\imvpm.exe",
+            "args": [
+                "..\\..\\..\\..\\assets\\test-data\\piano.wav"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\build"
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "detail": "Run main program"
+        }
+    ],
+    "version": "2.0.0"
+}

@@ -1,0 +1,43 @@
+cmake_minimum_required(VERSION 3.13)
+project(PitchMonitor VERSION "0.0.1" DESCRIPTION "Pitch monitor application" LANGUAGES CXX C)
+
+set(HAVE_OPUS "yes")
+
+if (NOT DEFINED PM_BACKEND)
+  #set(PM_BACKEND "sdl2")
+  set(PM_BACKEND "win32")
+endif()
+
+if (NOT DEFINED PM_GRAPHICS)
+  #set(PM_GRAPHICS "opengl3")
+  set(PM_GRAPHICS "dx11")
+endif()
+
+if (PM_BUILD_TEST_APP)
+  add_executable(pitchtest src/testapp.cpp external/fft4g.cpp)
+  set_target_properties(pitchtest PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
+  target_include_directories(pitchtest PUBLIC src external)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DANALYZER_DEBUG")
+endif()
+
+add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp external/stb_vorbis.c src/imgui/backends/${PM_BACKEND}_${PM_GRAPHICS}.cpp external/fft4g.cpp external/imgui/backends/imgui_impl_${PM_GRAPHICS}.cpp external/imgui/backends/imgui_impl_${PM_BACKEND}.cpp external/imgui/imgui.cpp external/imgui/imgui_widgets.cpp external/imgui/imgui_tables.cpp external/imgui/imgui_draw.cpp)
+set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
+target_include_directories(imvpm PUBLIC src src/imgui external external/imgui external/imgui/backends)
+if (HAVE_OPUS)
+  target_compile_definitions(imvpm PUBLIC HAVE_OPUS)
+  target_include_directories(imvpm PUBLIC external/libogg/include external/opus/include external/opusfile/include)
+  target_link_libraries(imvpm ${CMAKE_SOURCE_DIR}/external/libogg/build/ogg.lib ${CMAKE_SOURCE_DIR}/external/opus/build/opus.lib ${CMAKE_SOURCE_DIR}/external/opusfile/build/opusfile.lib)
+endif()
+
+if(${PM_BACKEND} STREQUAL "sdl2")
+  include_directories(/usr/include/SDL2)
+  target_link_libraries(imvpm SDL2)
+elseif(${PM_BACKEND} STREQUAL "win32")
+#  target_link_options(imvpm PUBLIC "LINKER:/subsystem:windows,/entry:mainCRTStartup")
+endif()
+
+if(${PM_GRAPHICS} STREQUAL "opengl3")
+  target_link_libraries(imvpm OpenGL)
+elseif(${PM_GRAPHICS} STREQUAL "dx11")
+  target_link_libraries(imvpm d3d11 d3dcompiler)
+endif()
