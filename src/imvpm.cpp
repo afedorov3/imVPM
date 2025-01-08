@@ -396,7 +396,9 @@ static ImU32 UI_colors[] = {
     IM_COL32(  0,   0,   0,   0),
     IM_COL32(255, 255, 255,  30),
     IM_COL32(255, 255, 255,  60),
-    IM_COL32(255,  70,  70, 255),
+    IM_COL32(255,   0,  50, 200),
+    IM_COL32(180,  80,  80, 255),
+    IM_COL32(255,  60,  60, 255),
     IM_COL32(255, 255,  70, 255)
 };
 enum {
@@ -404,6 +406,8 @@ enum {
     UIIdxButton,
     UIIdxButtonHovered,
     UIIdxButtonActive,
+    UIIdxProgress,
+    UIIdxRecord,
     UIIdxMsgErr,
     UIIdxMsgWarn,
     UIColorCount       = IM_ARRAYSIZE(UI_colors)
@@ -435,6 +439,8 @@ static ImVec2      widget_sz;             // UI widget size
 static float   widget_margin;             // UI widget margin
 static float  widget_padding;             // UI widget padding
 static float    menu_spacing;             // UI menu spacing
+static float    progress_hgt;             // UI playback progress height
+static bool   progress_hover =    false;  // UI playback progress is hovered
 static std::vector<double> f_peak_buf;    // peak frequency averaging buffer
 static size_t f_peak_buf_pos = 0;         // peak frequency averaging buffer position
 
@@ -445,6 +451,7 @@ static Analyzer analyzer;
 static std::mutex analyzer_mtx;
 static AudioHandler audiohandler(44100 /* Fsample */, 2 /* channels */, AudioHandler::FormatF32 /* sample format */, AudioHandler::FormatS16 /* record format */, 1470 /* cb interval */);
 static AudioHandler::State ah_state;      // frame-locked handler state
+static uint64_t ah_len = 0, ah_pos = 0;   // handler length and position, applicable only to playback and record
 
 //-----------------------------------------------------------------------------
 // [SECTION] Forward Declarations, Helpers
@@ -455,6 +462,7 @@ static void ShowToolbarWindow(bool* p_open);
 //  widgets
 static void Menu();                       // menu widget
 static void CaptureDevices();             // capture device selection widget
+static void PlaybackProgress();           // playback progress bar
 
 // main window routines
 static void InputControl();               // handle controls
@@ -747,6 +755,8 @@ void ImGui::AppNewFrame()
         open_file_dlg = nullptr;
     }
 
+    audiohandler.getState(ah_state, &ah_len, &ah_pos); // get handler state for a frame
+
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
     ImGui::ShowAboutWindow(nullptr);
@@ -766,6 +776,17 @@ void ImGui::AppNewFrame()
     ImGui::SetNextWindowPos(pos);
     CaptureDevices();
 
+    // playback progress
+    if (ah_state.isPlaying())
+    {
+        progress_hgt = widget_margin * (0.4f + progress_hover * 0.5f);
+        pos.x = 0;
+        pos.y = viewport->Size.y - progress_hgt;
+        ImGui::SetNextWindowPos(pos);
+        ImGui::SetNextWindowSize(ImVec2(viewport->Size.x, progress_hgt));
+        PlaybackProgress();
+    }
+
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
     // Body of the main window starts here.
@@ -779,8 +800,6 @@ void ImGui::AppNewFrame()
         | ImGuiWindowFlags_NoBringToFrontOnFocus
         ))
     {
-        audiohandler.getState(ah_state);
-
         InputControl();
         Draw();
         ProcessLog();
@@ -934,6 +953,7 @@ void CaptureDevices()
     ImGui::PopStyleVar(2);
 
     ImGui::PushFont(font_widget);
+    ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor(ah_state.isCapOrRec() ? UI_colors[UIIdxRecord] : UI_colors[UIIdxDefault]));
     ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxButton]));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxButtonHovered]));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxButtonActive]));
@@ -942,7 +962,7 @@ void CaptureDevices()
         audiohandler.enumerate();
         ImGui::OpenPopup("##CaptureDevicesPopup");
     }
-    ImGui::PopStyleColor(3);
+    ImGui::PopStyleColor(4);
     ImGui::PopFont();
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(menu_spacing, menu_spacing));
@@ -969,6 +989,50 @@ void CaptureDevices()
     ImGui::PopStyleVar(2);
 
     // End of CaptureDevice window
+    ImGui::End();
+}
+
+void PlaybackProgress()
+{
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
+    ImGui::Begin("##PlaybackProgress", nullptr,
+        ImGuiWindowFlags_AlwaysAutoResize
+        | ImGuiWindowFlags_NoDecoration
+        | ImGuiWindowFlags_NoBackground
+        | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoFocusOnAppearing
+        );
+    ImGui::PopStyleVar(2);
+
+    ImVec2 wsize = ImGui::GetWindowSize();
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, (ImVec4)ImColor(UI_colors[UIIdxButtonHovered]));
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, (ImVec4)ImColor(UI_colors[UIIdxProgress]));
+    ImGui::ProgressBar((float)ah_pos / ah_len, wsize, "");
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNone))
+    {
+        ImVec2 mpos = ImGui::GetMousePos();
+        ImGui::SetTooltip(audiohandler.framesToTime(uint64_t(mpos.x / wsize.x * ah_len)).c_str());
+    }
+
+    bool hover = ImGui::IsWindowHovered();
+    static int grace = 0;
+    if (hover != progress_hover)
+    {
+        // some magic number filtering
+        grace += hover * 9 + 1; // 100 ms heatup, 1 second cooldown
+        if (grace >= ImGui::GetIO().Framerate)
+            progress_hover = hover;
+    }
+    else
+        grace = 0;
+
+    //ImGui::SetItemTooltip("Capture / Record device");
+
+    // End of PlaybackProgress window
     ImGui::End();
 }
 

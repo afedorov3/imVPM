@@ -207,6 +207,7 @@ public:
         constexpr bool isPlaying()   { return  (value & StateMask) == StatePlayback; }
         constexpr bool isCapturing() { return  (value & StateMask) == StateCapture; }
         constexpr bool isRecording() { return  (value & StateMask) == StateRecord; }
+        constexpr bool isCapOrRec()  { return  (value & StateCapture) == StateCapture; }
         constexpr bool isPaused()    { return   value & StatePause; }
         constexpr bool atEOF()       { return   value & StateEOF; }
 
