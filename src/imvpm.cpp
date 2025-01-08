@@ -866,32 +866,6 @@ void ShowToolbarWindow(bool* p_open)
         ImGui::SameLine(); ImGui::Checkbox("semi lbls", &semi_lbls);
         if (p_semi_lbls != semi_lbls) { fonts_reloaded = true; p_semi_lbls = semi_lbls; }
         ImGui::Checkbox("scale chroma", &scale_chroma);
-
-        /*{
-            const AudioHandler::Devices &devices = audiohandler.getCaptureDevices();
-            if (ImGui::BeginCombo(ICON_FA_MICROPHONE, devices.selectedName.c_str())) {
-                for (int n = 0; n < devices.list.size(); n++) {
-                    bool is_selected = devices.list[n].name == devices.selectedName;
-                    if (ImGui::Selectable(devices.list[n].name.c_str(), is_selected) && !is_selected)
-                    {
-                        audiohandler.setPreferredCaptureDevice(devices.list[n].name.c_str());
-                        if (ah_state.isIdle())
-                            audiohandler.capture();
-                    }
-                    if (is_selected)
-                        ImGui::SetItemDefaultFocus();
-                }
-                ImGui::EndCombo();
-            }
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay))
-                ImGui::SetItemTooltip("Capture / Record device");
-            audiohandler.unlockDevices();
-            ImGui::SameLine();
-            if (ImGui::Button(ICON_FA_ROTATE))
-                audiohandler.enumerate();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay))
-                ImGui::SetItemTooltip("Re-enumerate audio devices");
-        }*/
      }
 
 defer:
@@ -1012,11 +986,6 @@ void PlaybackProgress()
     ImGui::ProgressBar((float)ah_pos / ah_len, wsize, "");
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNone))
-    {
-        ImVec2 mpos = ImGui::GetMousePos();
-        ImGui::SetTooltip(audiohandler.framesToTime(uint64_t(mpos.x / wsize.x * ah_len)).c_str());
-    }
 
     bool hover = ImGui::IsWindowHovered();
     static int grace = 0;
@@ -1029,8 +998,14 @@ void PlaybackProgress()
     }
     else
         grace = 0;
-
-    //ImGui::SetItemTooltip("Capture / Record device");
+    if (hover && progress_hover)
+    {
+        ImVec2 mpos = ImGui::GetMousePos();
+        uint64_t seek_to = uint64_t(mpos.x / wsize.x * ah_len);
+        ImGui::SetTooltip(audiohandler.framesToTime(seek_to).c_str());
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left, false) && ah_state.canSeek())
+            audiohandler.seek(seek_to);
+    }
 
     // End of PlaybackProgress window
     ImGui::End();

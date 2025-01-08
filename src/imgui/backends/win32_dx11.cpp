@@ -101,7 +101,7 @@ int wmain(int argc, wchar_t** wargv)
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Example", nullptr };
     ::RegisterClassExW(&wc);
     g_Window = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui main window", WS_OVERLAPPEDWINDOW, ImGui::SysWinPos.x, ImGui::SysWinPos.y, ImGui::SysWinPos.w, ImGui::SysWinPos.h, nullptr, nullptr, wc.hInstance, nullptr);
-printf("HWND %p\n", g_Window);
+
     // Initialize Direct3D
     if (!CreateDeviceD3D(g_Window))
     {
