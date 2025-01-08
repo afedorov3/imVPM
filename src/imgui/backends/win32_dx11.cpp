@@ -31,6 +31,7 @@ static UINT_PTR                 g_idGlobalRefreshTimer = 0;
 
        ImRect                   ImGui::SysWinPos  = ImRect(100, 100, 1280, 800);
        ImVec4                   ImGui::SysBgColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+       bool                     ImGui::AppFocus = false;
        bool                     ImGui::AppExit = false;
        bool                     ImGui::AppReconfigure = false;
        ImU32                    ImGui::DPI = USER_DEFAULT_SCREEN_DPI;
@@ -100,7 +101,7 @@ int wmain(int argc, wchar_t** wargv)
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Example", nullptr };
     ::RegisterClassExW(&wc);
     g_Window = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui main window", WS_OVERLAPPEDWINDOW, ImGui::SysWinPos.x, ImGui::SysWinPos.y, ImGui::SysWinPos.w, ImGui::SysWinPos.h, nullptr, nullptr, wc.hInstance, nullptr);
-
+printf("HWND %p\n", g_Window);
     // Initialize Direct3D
     if (!CreateDeviceD3D(g_Window))
     {
@@ -297,6 +298,9 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         {
             ptrEnableNonClientDpiScaling (hWnd); // required for v1 per-monitor scaling
         }
+        break;
+    case WM_ACTIVATE:
+        ImGui::AppFocus = (bool)wParam;
         break;
     case WM_SIZE:
         if (wParam == SIZE_MINIMIZED)

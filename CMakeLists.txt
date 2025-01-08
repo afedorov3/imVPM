@@ -22,7 +22,7 @@ endif()
 
 add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp external/stb_vorbis.c src/imgui/backends/${PM_BACKEND}_${PM_GRAPHICS}.cpp external/fft4g.cpp external/imgui/backends/imgui_impl_${PM_GRAPHICS}.cpp external/imgui/backends/imgui_impl_${PM_BACKEND}.cpp external/imgui/imgui.cpp external/imgui/imgui_widgets.cpp external/imgui/imgui_tables.cpp external/imgui/imgui_draw.cpp)
 set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
-target_include_directories(imvpm PUBLIC src src/imgui external external/imgui external/imgui/backends)
+target_include_directories(imvpm PUBLIC src src/imgui external external/imgui external/imgui/backends external/fonts external/portable-file-dialogs)
 if (HAVE_OPUS)
   target_compile_definitions(imvpm PUBLIC HAVE_OPUS)
   target_include_directories(imvpm PUBLIC external/libogg/include external/opus/include external/opusfile/include)

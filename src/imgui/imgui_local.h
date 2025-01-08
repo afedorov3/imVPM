@@ -12,6 +12,7 @@ namespace ImGui
     // Backend variables
     extern ImRect SysWinPos;                         // initial window position provider x, y, w, h
     extern ImVec4 SysBgColor;                        // Client window background color r, g, b, a
+    extern bool AppFocus;                            // System window has focus
     extern bool AppExit;                             // Exit signal to backend
     extern bool AppReconfigure;                      // request backend to call AppConfig()
                                                      // backend can also set this flag on system configuration events

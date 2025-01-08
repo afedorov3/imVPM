@@ -57,11 +57,15 @@ Index of this file:
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
-#include <fonts/IconsFontAwesome6.h>
+#include <IconsFontAwesome6.h>
 #include "Analyzer.hpp"
 #include "AudioHandler.h"
 #include "fonts.h"
+
+#define NOMINMAX
+#include <portable-file-dialogs.h>
 
 #define IMGUI_APP
 #include "imgui_local.h"
@@ -158,8 +162,9 @@ Index of this file:
 #define FONT       Font      // symbol names that was given to binary_to_compressed_c when fonts.h being created
 #define FONT_ICONS FontIcons
 #define FONT_NOTES FontMono
-static constexpr float    font_def_sz = 18.0f;  // default font size, px
-static constexpr float  font_icons_sz = 16.0f;  // icons size, px
+static constexpr float    font_def_sz = 20.0f;  // default font size, px
+static constexpr float   font_icon_sz = 16.0f;  // default font icon size, px
+static constexpr float font_widget_sz = 28.0f;  // widget icons size, px
 static constexpr float   font_grid_sz = 18.0f;  // grid font size, px
 static constexpr float  font_pitch_sz = 36.0f;  // pitch font size, px
 static constexpr float  font_tuner_sz = 16.0f;  // tuner font size, px
@@ -387,18 +392,26 @@ enum {
 };
 
 static ImU32 UI_colors[] = {
-    IM_COL32(255, 70, 70, 255),
-    IM_COL32(255, 255, 70, 255)
+    IM_COL32(180, 180, 180, 255),
+    IM_COL32(  0,   0,   0,   0),
+    IM_COL32(255, 255, 255,  30),
+    IM_COL32(255, 255, 255,  60),
+    IM_COL32(255,  70,  70, 255),
+    IM_COL32(255, 255,  70, 255)
 };
 enum {
-    UIIdxMsgErr = 0,
+    UIIdxDefault = 0,
+    UIIdxButton,
+    UIIdxButtonHovered,
+    UIIdxButtonActive,
+    UIIdxMsgErr,
     UIIdxMsgWarn,
     UIColorCount       = IM_ARRAYSIZE(UI_colors)
 };
 
 // STATE
 static ImFont      *font_def =  nullptr;  // default font ptr
-static ImFont    *font_icons =  nullptr;  // icons font ptr
+static ImFont   *font_widget =  nullptr;  // widget icons font ptr
 static ImFont     *font_grid =  nullptr;  // grid font ptr
 static ImFont    *font_pitch =  nullptr;  // pitch font ptr
 static ImFont    *font_tuner =  nullptr;  // tuner font ptr
@@ -418,8 +431,15 @@ static bool     scale_chroma =    false;  // plot: scale is Cromatic            
 static bool        rul_right =     true;  // vertical axis ruler position
 static float      x_peak_off =     0.0f;  // peak note position offset
 static ImVec2      rullbl_sz;             // vertical axis ruler size
+static ImVec2      widget_sz;             // UI widget size
+static float   widget_margin;             // UI widget margin
+static float  widget_padding;             // UI widget padding
+static float    menu_spacing;             // UI menu spacing
 static std::vector<double> f_peak_buf;    // peak frequency averaging buffer
 static size_t f_peak_buf_pos = 0;         // peak frequency averaging buffer position
+
+typedef std::unique_ptr<pfd::open_file> unique_open_file;
+static unique_open_file open_file_dlg = nullptr; // open file dialog operation
 
 static Analyzer analyzer;
 static std::mutex analyzer_mtx;
@@ -430,10 +450,16 @@ static AudioHandler::State ah_state;      // frame-locked handler state
 // [SECTION] Forward Declarations, Helpers
 //-----------------------------------------------------------------------------
 
+// UI routines
 static void ShowToolbarWindow(bool* p_open);
-static void InputControl(); // handle controls
-static void Draw();         // main drawing routine
-static void ProcessLog();   // show AudioHandler log
+//  widgets
+static void Menu();                       // menu widget
+static void CaptureDevices();             // capture device selection widget
+
+// main window routines
+static void InputControl();               // handle controls
+static void Draw();                       // main drawing routine
+static void ProcessLog();                 // AudioHandler log messages
 
 enum {
     TextAlignLeft = 0,
@@ -534,6 +560,20 @@ void toggleFullscreen()
         ImGui::SysMaximize();
 }
 
+void OpenAudioFile()
+{
+    open_file_dlg = unique_open_file(new pfd::open_file("Open file for playback", pfd::path::home(),
+                            { "Audio files (.wav .mp3 .ogg .flac"
+#if defined(HAVE_OPUS)
+                            " .opus"
+#endif
+                            ")", "*.wav *.mp3 *.ogg *.flac"
+#if defined(HAVE_OPUS)
+                            " *.opus"
+#endif
+                            , "All Files", "*" }));
+}
+
 //-----------------------------------------------------------------------------
 // [SECTION] Backend callbacks
 //-----------------------------------------------------------------------------
@@ -559,6 +599,9 @@ int ImGui::AppInit(int argc, char const *const* argv)
     audiohandler.log().SetLevel(logger::LOG_WARN);
     audiohandler.enumerate();
 
+    if (!pfd::settings::available())
+        audiohandler.log().LogMsg(logger::LOG_WARN, "portable-file-dialogs is unavailable on this platform, file operations ceased");
+
     if (argc > 1)
     {
         audiohandler.play(argv[1]);
@@ -577,6 +620,13 @@ int ImGui::AppInit(int argc, char const *const* argv)
 #define ADD_FONT(var, ranges, name) do {\
   strcpy_s(font_config.Name, IM_ARRAYSIZE(font_config.Name), #name ", " #var); \
   var = io.Fonts->AddFontFromMemoryCompressedTTF(FONT_DATA(name) , FONT_SIZE(name), var ## _sz * scale, &font_config, ranges); \
+} while(0)
+#define MERGE_FONT(var, ranges, name) do {\
+  font_config.MergeMode = true; \
+  font_config.GlyphMinAdvanceX = var ## _sz * scale; \
+  io.Fonts->AddFontFromMemoryCompressedTTF(FONT_DATA(name) , FONT_SIZE(name), font_config.GlyphMinAdvanceX, &font_config, ranges); \
+  font_config.MergeMode = false; \
+  font_config.GlyphMinAdvanceX = 0; \
 } while(0)
 bool ImGui::AppConfig()
 {
@@ -600,7 +650,6 @@ bool ImGui::AppConfig()
         0x2DE0, 0x2DFF, // Cyrillic Extended-A
         0xA640, 0xA69F, // Cyrillic Extended-B
         0x266D, 0x266F, // ♭, ♯
-        0x27F3, 0x27F3, // ⟳
         0,
     };
     static const ImWchar ranges_icons[] =
@@ -609,7 +658,6 @@ bool ImGui::AppConfig()
         0xF0c9, 0xF0c9, // bars
         0xF130, 0xF130, // microphone
         0xF1DE, 0xF1DE, // sliders
-        0xF2F1, 0xF2F1, // rotate
         0,
     };
     static const ImWchar ranges_notes[] =
@@ -624,24 +672,27 @@ bool ImGui::AppConfig()
 
     io.Fonts->Clear();
 
-    ADD_FONT(font_def,   ranges_ui,    FONT);
-    {
-        font_config.MergeMode = true;
-        font_config.GlyphMinAdvanceX = font_icons_sz;
-        ADD_FONT(font_icons, ranges_icons, FONT_ICONS);
-        font_config.MergeMode = false;
-        font_config.GlyphMinAdvanceX = 0;
-    }
+    ADD_FONT(font_def, ranges_ui, FONT);
+    MERGE_FONT(font_icon, ranges_icons, FONT_ICONS);
+    ADD_FONT(font_widget, ranges_icons, FONT_ICONS);
     ADD_FONT(font_tuner, ranges_notes, FONT_NOTES);
     ADD_FONT(font_pitch, ranges_notes, FONT_NOTES);
-    ADD_FONT(font_grid,  ranges_notes, FONT_NOTES);
+    ADD_FONT(font_grid, ranges_notes, FONT_NOTES);
 
     io.Fonts->Build();
     io.FontDefault = font_def;
     fonts_reloaded = true;
 
-    ImGuiStyle& style = ImGui::GetStyle(); 
-    style.FrameRounding = 5.f * scale;
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.FrameRounding = 5.0f * scale;
+    style.PopupRounding = 5.0f * scale;
+    style.GrabRounding  = 4.0f * scale;
+    style.Colors[ImGuiCol_Text] = ImColor(UI_colors[UIIdxDefault]);
+
+    widget_padding = font_widget_sz * scale / 10;
+    widget_sz = ImVec2(font_widget_sz * scale + widget_padding * 2, font_widget_sz * scale + widget_padding * 2);
+    widget_margin = font_widget_sz * scale / 2;
+    menu_spacing = 8.0f * scale;
 
     return true;
 }
@@ -684,27 +735,47 @@ void ImGui::AppNewFrame()
         //////////
     }
 
-    ShowToolbarWindow(nullptr);
+    // process file operations
+    if (open_file_dlg && open_file_dlg->ready(0))
+    {
+        auto files = open_file_dlg->result();
+        if (files.size() > 0)
+        {
+            audiohandler.stop();
+            audiohandler.play(files[0].c_str());
+        }
+        open_file_dlg = nullptr;
+    }
+
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
     ImGui::ShowAboutWindow(nullptr);
 
-    // We specify a default position/size in case there's no data in the .ini file.
-    // We only do it to make the demo applications a little more welcoming, but typically this isn't required.
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ShowToolbarWindow(nullptr);
+
+    // Widgets
+    //  Menu
+    ImVec2 pos = viewport->Pos + viewport->Size;
+    pos.x -= widget_sz.x + widget_margin + rullbl_sz.x;
+    pos.y -= widget_sz.y + widget_margin;
+    ImGui::SetNextWindowPos(pos);
+    Menu();
+
+    //  Capture device selector
+    pos.x -= widget_sz.x + widget_margin;
+    ImGui::SetNextWindowPos(pos);
+    CaptureDevices();
+
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
-
     // Body of the main window starts here.
     if (ImGui::Begin("imVocalPitchMonitor", nullptr,
-        ImGuiWindowFlags_NoTitleBar
-        | ImGuiWindowFlags_NoScrollbar
-        | ImGuiWindowFlags_NoScrollWithMouse
-        | ImGuiWindowFlags_AlwaysAutoResize
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoResize
-        | ImGuiWindowFlags_NoCollapse
-        | ImGuiWindowFlags_NoNav
+        ImGuiWindowFlags_AlwaysAutoResize
+        | ImGuiWindowFlags_NoDecoration
         | ImGuiWindowFlags_NoBackground
+        | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoNav
+        | ImGuiWindowFlags_NoScrollWithMouse
         | ImGuiWindowFlags_NoBringToFrontOnFocus
         ))
     {
@@ -735,10 +806,9 @@ void ShowToolbarWindow(bool* p_open)
 
     if (!ImGui::Begin("##ToolbarWnd", p_open,
         ImGuiWindowFlags_AlwaysAutoResize
-        | ImGuiWindowFlags_NoTitleBar
+        | ImGuiWindowFlags_NoDecoration
         | ImGuiWindowFlags_NoBackground
         | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoCollapse
         | ImGuiWindowFlags_NoFocusOnAppearing
         | ImGuiWindowFlags_NoBringToFrontOnFocus
         ))
@@ -778,7 +848,7 @@ void ShowToolbarWindow(bool* p_open)
         if (p_semi_lbls != semi_lbls) { fonts_reloaded = true; p_semi_lbls = semi_lbls; }
         ImGui::Checkbox("scale chroma", &scale_chroma);
 
-        {
+        /*{
             const AudioHandler::Devices &devices = audiohandler.getCaptureDevices();
             if (ImGui::BeginCombo(ICON_FA_MICROPHONE, devices.selectedName.c_str())) {
                 for (int n = 0; n < devices.list.size(); n++) {
@@ -802,10 +872,103 @@ void ShowToolbarWindow(bool* p_open)
                 audiohandler.enumerate();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay))
                 ImGui::SetItemTooltip("Re-enumerate audio devices");
-        }
+        }*/
      }
 
 defer:
+    ImGui::End();
+}
+
+void Menu()
+{
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
+    ImGui::Begin("##Menu", nullptr,
+        ImGuiWindowFlags_AlwaysAutoResize
+        | ImGuiWindowFlags_NoDecoration
+        | ImGuiWindowFlags_NoBackground
+        | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoFocusOnAppearing
+        | ImGuiWindowFlags_NoBringToFrontOnFocus
+        );
+    ImGui::PopStyleVar(2);
+
+    ImGui::PushFont(font_widget);
+    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxButton]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxButtonHovered]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxButtonActive]));
+    if (ImGui::Button(ICON_FA_BARS, widget_sz))
+        ImGui::OpenPopup("##MenuPopup");
+    ImGui::PopStyleColor(3);
+    ImGui::PopFont();
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(menu_spacing, menu_spacing));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(menu_spacing, menu_spacing));
+    if (ImGui::BeginPopup("##MenuPopup"))
+    {
+        if (ImGui::Selectable(ICON_FA_FOLDER_OPEN " Open file"))
+            OpenAudioFile();
+        ImGui::Separator();
+        ImGui::Selectable(ICON_FA_SLIDERS " Settings");
+
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar(2);
+
+    // End of Menu window
+    ImGui::End();
+}
+
+void CaptureDevices()
+{
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
+    ImGui::Begin("##CaptureDevices", nullptr,
+        ImGuiWindowFlags_AlwaysAutoResize
+        | ImGuiWindowFlags_NoDecoration
+        | ImGuiWindowFlags_NoBackground
+        | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoFocusOnAppearing
+        | ImGuiWindowFlags_NoBringToFrontOnFocus
+        );
+    ImGui::PopStyleVar(2);
+
+    ImGui::PushFont(font_widget);
+    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxButton]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxButtonHovered]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxButtonActive]));
+    if (ImGui::Button(ICON_FA_MICROPHONE, widget_sz))
+    {
+        audiohandler.enumerate();
+        ImGui::OpenPopup("##CaptureDevicesPopup");
+    }
+    ImGui::PopStyleColor(3);
+    ImGui::PopFont();
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(menu_spacing, menu_spacing));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(menu_spacing, menu_spacing));
+    if (ImGui::BeginPopup("##CaptureDevicesPopup"))
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextAlign, ImVec2(0.5f, 0.75f));
+        ImGui::SeparatorText("Capture devices");
+        ImGui::PopStyleVar();
+        const AudioHandler::Devices &devices = audiohandler.getCaptureDevices();
+        for (int n = 0; n < devices.list.size(); n++) {
+            bool is_selected = devices.list[n].name == devices.selectedName;
+            if (ImGui::MenuItem(devices.list[n].name.c_str(), "", is_selected) && !is_selected)
+            {
+                audiohandler.setPreferredCaptureDevice(devices.list[n].name.c_str());
+                if (ah_state.isIdle())
+                    audiohandler.capture();
+            }
+        }
+        audiohandler.unlockDevices();
+
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar(2);
+
+    // End of CaptureDevice window
     ImGui::End();
 }
 
