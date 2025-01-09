@@ -214,6 +214,12 @@ constexpr const ImU32 palette[] = {
     IM_COL32( 64,  64,  64, 255),  // GRAY
     IM_COL32( 32,  32,  32, 255),  // DARK GRAY
 };
+const char *palette_names[] = {
+    "RED",    "PINK",        "PURPLE", "INDIGO",
+    "BLUE",   "LIGHT BLUE",  "CYAN",   "TEAL",
+    "GREEN",  "LIGHT GREEN", "LIME",   "YELLOW",
+    "ORANGE", "LIGHT GRAY",  "GRAY",   "DARK GRAY",
+};
 enum {
     ColorRed = 0,
     ColorPink,
@@ -332,14 +338,7 @@ static bool       but_tempo = ButtonTempoDef;                                   
 static bool     but_devices = ButtonDevsDef;
 static float    play_volume = 1.0f;
 static bool            mute = false;
-/*
-    palette[ColorRed],
-    palette[ColorOrange],
-    palette[ColorYellow],
-    palette[ColorGreen],
-    palette[ColorBlue],
-    palette[ColorPurple],
-*/
+
 static ImU32 plot_colors[] = {  // Plot palete, fixed order up to and including pitch
     palette[ColorDarkGray],       //   Semitone
     palette[ColorLightGray],      //   1st Tonic
@@ -1003,7 +1002,7 @@ void PlaybackDevices()
         float vol;
         audiohandler.getPlaybackVolumeFactor(vol);
         vol *= 100.0f;
-        ImGui::SetNextItemWidth(ImGui::GetWindowSize().x - menu_spacing * 2);
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
         if (ImGui::SliderFloat("##VolumeControl", &vol, 0.0f, 100.0f, "Volume %.0f%%"))
         {
             // update settings as well
@@ -1179,7 +1178,7 @@ void Draw()
         c_peak += c_calib;
 
     ImVec2 wsize = ImGui::GetWindowSize();
-    ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     // adjust plot limits
     double step = y_zoom * font_grid_sz * scale;
@@ -1453,21 +1452,68 @@ void UpdateSettings()
 
 }
 
-static inline bool ColorPicker(const char *label, ImU32 &color, float split)
+static inline bool ColorPicker(const char *label, ImU32 &color, float split = 0.0f)
 {
+    float button_width(100.0f * scale);
+    static ImColor backup_color;
     bool ret = false;
 
     ImColor col(color);
     ImGui::AlignTextToFramePadding();
-    ImGui::TableNextColumn();
     ImGui::TextUnformatted(label);
-    ImGui::SameLine(split);
-    ImGui::TableNextColumn();
+    ImGui::SameLine(split >= 0.0f ? split : ImGui::GetContentRegionAvail().x + ImGui::GetCursorPos().x - button_width);
     ImGui::PushID(label); // use memory address as id
-    ret = ImGui::ColorEdit4("##Picker", (float*)&col, ImGuiColorEditFlags_NoAlpha);
+    if (ImGui::ColorButton("##ColorButton", col, ImGuiColorEditFlags_NoAlpha, ImVec2(button_width, ImGui::GetFrameHeight())))
+    {
+        ImGui::OpenPopup("##PaletePicker");
+        backup_color = color;
+    }
+    if (ImGui::BeginPopup("##PaletePicker"))
+    {
+        ImVec2 item_sz = ImVec2(20, 20) * scale;
+        constexpr size_t row_sz(4);
+
+        float spacing = ImGui::GetStyle().ItemSpacing.y;
+        ImVec2 preview_sz = (item_sz + ImGui::GetStyle().ItemSpacing) * row_sz;
+        preview_sz.y *= font_def_sz / 32.0f; // adjust for best fit
+
+        ImGui::Text("Pick a color");
+        ImGui::Separator();
+        if (ImGui::ColorPicker4("##ColorPicker", (float*)&col, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoSmallPreview))
+        {
+            color = col;
+            ret = true;
+        }
+        ImGui::SameLine();
+
+        ImGui::BeginGroup(); // Lock X position
+        ImGui::Text("Current");
+        ImGui::ColorButton("##Current", col, ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_AlphaPreviewHalf, preview_sz);
+        ImGui::Text("Previous");
+        if (ImGui::ColorButton("##Previous", backup_color, ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_AlphaPreviewHalf, preview_sz))
+            color = backup_color;
+        ImGui::Separator();
+        ImGui::Text("Palette");
+        
+        for (int n = 0; n < ColorCount; n++)
+        {
+            ImGui::PushID(n);
+            if ((n % row_sz) != 0)
+                ImGui::SameLine(0.0f, spacing);
+
+            ImGuiColorEditFlags palette_button_flags = ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoSmallPreview;
+            if (ImGui::ColorButton("##PaletteItem", ImColor(palette[n]), palette_button_flags, item_sz))
+            {
+                color = palette[n];
+                ret = true;
+            }
+            ImGui::SetItemTooltip(palette_names[n]);
+            ImGui::PopID();
+        }
+        ImGui::EndGroup();
+        ImGui::EndPopup();
+    }
     ImGui::PopID();
-    if (ret)
-        color = col;
 
     return ret;
 }
@@ -1566,8 +1612,8 @@ void SettingsWindow()
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Note names");
         ImGui::Indent();
-        fonts_reloaded |= ImGui::RadioButton("English    - C, D, E, F, G, A, B", &note_names, NoteNamesEnglish);
-        fonts_reloaded |= ImGui::RadioButton("Romance - Do, Re, Mi, Fa, Sol, La, Si", &note_names, NoteNamesRomance);
+        fonts_reloaded |= ImGui::RadioButton("English:     C, D, E, F, G, A, B", &note_names, NoteNamesEnglish);
+        fonts_reloaded |= ImGui::RadioButton("Romance:  Do, Re, Mi, Fa, Sol, La, Si", &note_names, NoteNamesRomance);
         ImGui::Unindent();
         ImGui::EndGroup();
     }
@@ -1610,28 +1656,27 @@ void SettingsWindow()
 
     {
         ImGui::TextUnformatted("Colors");
-        float split = ImGui::GetWindowSize().x * 0.4f;
         enum { CloseNone = 0, CloseScale, CloseChromatic };
         static int closenode = CloseNone;
 
         ImGui::Indent();
-        ColorPicker("Pitch", plot_colors[PlotIdxPitch], split);
-        ColorPicker("Tempo", plot_colors[PlotIdxTempo], split);
-        ColorPicker("Metronome", plot_colors[PlotIdxMetronome], split);
+        ColorPicker("Pitch", plot_colors[PlotIdxPitch], -1.0f);
+        ColorPicker("Tempo", plot_colors[PlotIdxTempo], -1.0f);
+        ColorPicker("Metronome", plot_colors[PlotIdxMetronome], -1.0f);
         ImGui::Unindent();
 
         if (closenode == CloseScale)
             ImGui::SetNextItemOpen(false);
         if (ImGui::TreeNodeEx("Scale##Colors", scale_chroma ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen))
         {
-            ColorPicker("1st Tonic", plot_colors[PlotIdxTonic], split);
-            ColorPicker("2nd Supertonic", plot_colors[PlotIdxSupertonic], split);
-            ColorPicker("3rd Mediant", plot_colors[PlotIdxMediant], split);
-            ColorPicker("4th Subdominant", plot_colors[PlotIdxSubdominant], split);
-            ColorPicker("5th Dominant", plot_colors[PlotIdxDominant], split);
-            ColorPicker("6th Subtonic", plot_colors[PlotIdxSubtonic], split);
-            ColorPicker("7th Leading", plot_colors[PlotIdxLeading], split);
-            ColorPicker("Semitone", plot_colors[PlotIdxSemitone], split);
+            ColorPicker("1st Tonic", plot_colors[PlotIdxTonic], -1.0f);
+            ColorPicker("2nd Supertonic", plot_colors[PlotIdxSupertonic], -1.0f);
+            ColorPicker("3rd Mediant", plot_colors[PlotIdxMediant], -1.0f);
+            ColorPicker("4th Subdominant", plot_colors[PlotIdxSubdominant], -1.0f);
+            ColorPicker("5th Dominant", plot_colors[PlotIdxDominant], -1.0f);
+            ColorPicker("6th Subtonic", plot_colors[PlotIdxSubtonic], -1.0f);
+            ColorPicker("7th Leading", plot_colors[PlotIdxLeading], -1.0f);
+            ColorPicker("Semitone", plot_colors[PlotIdxSemitone], -1.0f);
 
             closenode = CloseChromatic;
             ImGui::TreePop();
@@ -1641,18 +1686,18 @@ void SettingsWindow()
             ImGui::SetNextItemOpen(false);
         if (ImGui::TreeNodeEx("Chromatic##Colors", scale_chroma ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None))
         {
-            ColorPicker("C", plot_colors[PlotIdxChromaC], split);
-            ColorPicker("C♯/D♭", plot_colors[PlotIdxChromaCsBb], split);
-            ColorPicker("D", plot_colors[PlotIdxChromaD], split);
-            ColorPicker("D♯/E♭", plot_colors[PlotIdxChromaDsEb], split);
-            ColorPicker("E", plot_colors[PlotIdxChromaE], split);
-            ColorPicker("F", plot_colors[PlotIdxChromaF], split);
-            ColorPicker("F♯/G♭", plot_colors[PlotIdxChromaFsGb], split);
-            ColorPicker("G", plot_colors[PlotIdxChromaG], split);
-            ColorPicker("G♯/A♭", plot_colors[PlotIdxChromaGsAb], split);
-            ColorPicker("A", plot_colors[PlotIdxChromaA], split);
-            ColorPicker("A♯/B♭", plot_colors[PlotIdxChromaAsBb], split);
-            ColorPicker("B", plot_colors[PlotIdxChromaB], split);
+            ColorPicker("C", plot_colors[PlotIdxChromaC], -1.0f);
+            ColorPicker("C♯/D♭", plot_colors[PlotIdxChromaCsBb], -1.0f);
+            ColorPicker("D", plot_colors[PlotIdxChromaD], -1.0f);
+            ColorPicker("D♯/E♭", plot_colors[PlotIdxChromaDsEb], -1.0f);
+            ColorPicker("E", plot_colors[PlotIdxChromaE], -1.0f);
+            ColorPicker("F", plot_colors[PlotIdxChromaF], -1.0f);
+            ColorPicker("F♯/G♭", plot_colors[PlotIdxChromaFsGb], -1.0f);
+            ColorPicker("G", plot_colors[PlotIdxChromaG], -1.0f);
+            ColorPicker("G♯/A♭", plot_colors[PlotIdxChromaGsAb], -1.0f);
+            ColorPicker("A", plot_colors[PlotIdxChromaA], -1.0f);
+            ColorPicker("A♯/B♭", plot_colors[PlotIdxChromaAsBb], -1.0f);
+            ColorPicker("B", plot_colors[PlotIdxChromaB], -1.0f);
 
             closenode = CloseScale;
             ImGui::TreePop();
