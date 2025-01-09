@@ -260,6 +260,7 @@ public:
 
         std::string playbackFileName;
         std::string lastFileName;
+        bool updatePlaybackFileName;
         ma_uint64 length;
         Cmd playbackEOFcmd;
         float playbackVolumeFactor;
@@ -355,6 +356,8 @@ public:
     bool setPlaybackEOFaction(Command cmd);
     // setPlaybackFileName: set or reset (nullptr/"") filename for next playback command
     void setPlaybackFileName(const char *fileName);
+    // setUpdatePlaybackFileName: update PlaybackFileName after successful record
+    void setUpdatePlaybackFileName(bool newval) { pc.updatePlaybackFileName = newval; } // safe to modify directly
     // stop: stop the current operation and reset state
     void stop();
     // play: start playing a specified file or file preselected earlier,

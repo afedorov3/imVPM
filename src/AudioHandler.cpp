@@ -260,6 +260,7 @@ static void ah_capture_callback(ma_device *pDevice, void *pOutput, const void *p
 AudioHandler::privateContext::privateContext() :
             state(StateExit),
             backendError(MA_SUCCESS),
+            updatePlaybackFileName(false),
             length(0),
             playbackEOFcmd(CmdStop),
             playbackVolumeFactor(1.0f),
@@ -357,78 +358,6 @@ void AudioHandler::removeNotificationCb()
     pc.notificationCbUserData = nullptr;
 }
 
-void AudioHandler::stop()
-{
-    if (!pc.context)
-        return;
-
-    pc.cmdQueue.userCommand(CmdStop);
-}
-
-void AudioHandler::play(const char *fileName)
-{
-    if (!pc.context)
-        return;
-
-    pc.cmdQueue.userCommand({CmdPlay, fileName});
-}
-
-void AudioHandler::capture()
-{
-    if (!pc.context)
-        return;
-
-    pc.cmdQueue.userCommand(CmdCapture);
-}
-
-void AudioHandler::record(const char *fileName)
-{
-    if (!pc.context)
-        return;
-
-    pc.cmdQueue.userCommand({CmdRecord, fileName});
-}
-
-void AudioHandler::pause()
-{
-    if (!pc.context)
-        return;
-
-    pc.cmdQueue.userCommand(CmdPause);
-}
-
-void AudioHandler::resume()
-{
-    if (!pc.context)
-        return;
-
-    pc.cmdQueue.userCommand(CmdResume);
-}
-
-void AudioHandler::togglePause()
-{
-    if (!pc.context)
-        return;
-
-    pc.cmdQueue.userCommand(CmdTogglePause);
-}
-
-void AudioHandler::seek(uint64_t posInPcmFrames)
-{
-    if (!pc.context)
-        return;
-
-    pc.cmdQueue.userCommand({CmdSeek, posInPcmFrames});
-}
-
-void AudioHandler::rewind()
-{
-    if (!pc.context)
-        return;
-
-    pc.cmdQueue.userCommand(CmdRewind);
-}
-
 void AudioHandler::enumerate()
 {
     if (!pc.context)
@@ -494,14 +423,6 @@ bool AudioHandler::getPlaybackVolumeFactor(float &volumeFactor)
     return true;
 }
 
-void AudioHandler::setPlaybackFileName(const char *fileName)
-{
-    if (!pc.context)
-        return;
-
-    pc.cmdQueue.userCommand({CmdSetPlaybackFileName, fileName});
-}
-
 bool AudioHandler::setPlaybackEOFaction(Command cmd)
 {
     switch(cmd) {
@@ -520,6 +441,86 @@ bool AudioHandler::setPlaybackEOFaction(Command cmd)
     pc.playbackEOFcmd = cmd;
 
     return true;
+}
+
+void AudioHandler::setPlaybackFileName(const char *fileName)
+{
+    if (!pc.context)
+        return;
+
+    pc.cmdQueue.userCommand({CmdSetPlaybackFileName, fileName});
+}
+
+void AudioHandler::stop()
+{
+    if (!pc.context)
+        return;
+
+    pc.cmdQueue.userCommand(CmdStop);
+}
+
+void AudioHandler::play(const char *fileName)
+{
+    if (!pc.context)
+        return;
+
+    pc.cmdQueue.userCommand({CmdPlay, fileName});
+}
+
+void AudioHandler::capture()
+{
+    if (!pc.context)
+        return;
+
+    pc.cmdQueue.userCommand(CmdCapture);
+}
+
+void AudioHandler::record(const char *fileName)
+{
+    if (!pc.context)
+        return;
+
+    pc.cmdQueue.userCommand({CmdRecord, fileName});
+}
+
+void AudioHandler::seek(uint64_t posInPcmFrames)
+{
+    if (!pc.context)
+        return;
+
+    pc.cmdQueue.userCommand({CmdSeek, posInPcmFrames});
+}
+
+void AudioHandler::rewind()
+{
+    if (!pc.context)
+        return;
+
+    pc.cmdQueue.userCommand(CmdRewind);
+}
+
+void AudioHandler::pause()
+{
+    if (!pc.context)
+        return;
+
+    pc.cmdQueue.userCommand(CmdPause);
+}
+
+void AudioHandler::resume()
+{
+    if (!pc.context)
+        return;
+
+    pc.cmdQueue.userCommand(CmdResume);
+}
+
+void AudioHandler::togglePause()
+{
+    if (!pc.context)
+        return;
+
+    pc.cmdQueue.userCommand(CmdTogglePause);
 }
 
 bool AudioHandler::getState(State &state, uint64_t *lenInPcmFrames, uint64_t *posInPcmFrames)
@@ -916,13 +917,16 @@ void AudioHandler::commandProc()
         case CmdStop:
         {
             NotificationEventOp op = pc.device ? (pc.device->type == ma_device_type_playback ? EventOpPlayback : EventOpCaptureRecord) : EventOpNone;
+            if (pc.encoder && pc.updatePlaybackFileName && !pc.genericError) {
+                pc.playbackFileName = pc.lastFileName;
+                pc.state.hasPlaybackFile = true;
+            }
             // reset state
             pc.state   = StateIdle;
             pc.device  = nullptr;
             pc.encoder = nullptr;
             pc.decoder = nullptr;
             pc.length  = 0;
-            pc.lastFileName.clear();
 
             if (pc.notificationCbMask & EventStop)
                 pc.notificationCbProc({EventStop, lastDeviceName->c_str(), (uint64_t)op}, pc.notificationCbUserData);

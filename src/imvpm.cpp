@@ -263,14 +263,18 @@ static constexpr bool  PlotSemiLinesDef = true;  // plot: draw semitone lines if
 static constexpr bool  PlotSemiLblsDef = false;  // plot: draw semitone label, default value
 static constexpr bool  ShowFreqDef =     false;  // show average pitch frequency by default [false]
 static constexpr bool  ShowTunerDef =     true;  // show tuner by default [true]
+static constexpr int   TunerSmoothMax =      5;  // tuner smoothing samples max value
+static constexpr int   TunerSmoothMin =      1;  // tuner smoothing samples min value
+static constexpr int   TunerSmoothDef =      3;  // tuner smoothing samples, default value [3]
 static constexpr bool  MetronomeDef =    false;  // metronome pulse by default [false]
 static constexpr int   TempoValueMax =     250;  // tempo max value, beats per minute
 static constexpr int   TempoValueMin =      20;  // tempo min value, beats per minute
 static constexpr int   TempoValueDef =     120;  // tempo, beats per minute, default value [120]
 static constexpr bool  TempoGridDef =    false;  // plot: draw tempo grid by default [false]
-static constexpr bool  ButtonHoldDef =    true;  // interface: show hold button by default [true]
-static constexpr bool  ButtonScaleDef =   true;  // interface: show scale selector by default [true]
-static constexpr bool  ButtonTempoDef =   true;  // interface: show tempo selector by default [true]
+static constexpr bool  ButtonHoldDef =    true;  // UI: show hold button by default [true]
+static constexpr bool  ButtonScaleDef =   true;  // UI: show scale selector by default [true]
+static constexpr bool  ButtonTempoDef =   true;  // UI: show tempo selector by default [true]
+static constexpr bool  ButtonDevsDef =    true;  // UI: show device selector by default [true]
 
 // selections
 enum {                                         // settings: note naming scheme
@@ -325,6 +329,7 @@ static int      tempo_meter = TempoMeterDef;
 static bool        but_hold = ButtonHoldDef;                                                      //  N/I
 static bool       but_scale = ButtonScaleDef;                                                     //  N/I
 static bool       but_tempo = ButtonTempoDef;                                                     //  N/I
+static bool     but_devices = ButtonDevsDef;
 static float    play_volume = 1.0f;
 static bool            mute = false;
 /*
@@ -385,7 +390,7 @@ enum {
     PlotIdxChromaAsBb,
     PlotIdxChromaB,
     PlotIdxTempo,
-    PlotIdxMeter,
+    PlotIdxReserved,
     PlotIdxPitch,
     PlotIdxMetronome,
     PlotIdxNote,
@@ -395,12 +400,12 @@ enum {
 };
 
 static ImU32 UI_colors[] = {
-    IM_COL32(180, 180, 180, 255),
+    IM_COL32(200, 200, 200, 255),
     IM_COL32(  0,   0,   0,   0),
     IM_COL32(255, 255, 255,  30),
     IM_COL32(255, 255, 255,  60),
     IM_COL32(255,   0,  50, 200),
-    IM_COL32(180,  80,  80, 255),
+    IM_COL32(200,   0,  40, 255),
     IM_COL32(255,   0,  50, 255),
     IM_COL32(255,  60,  60, 255),
     IM_COL32(255, 255,  70, 255)
@@ -425,8 +430,7 @@ static ImFont     *font_grid =  nullptr;  // grid font ptr
 static ImFont    *font_pitch =  nullptr;  // pitch font ptr
 static ImFont    *font_tuner =  nullptr;  // tuner font ptr
 static bool   fonts_reloaded =    false;  // Fonts reloaded signal
-static bool         aboutwnd =    false;  // About popup trigger
-static bool             hold =    false;  // hold/pause is active
+static bool             hold =    false;  // hold is active
 static float           scale =      1.0;  // DPI scaling factor
 static float      x_zoom_min =     0.0f;  // plot horizontal zoom min limit based on window size,
                                           //           DPI scale and Analyzer's pitch array size
@@ -458,6 +462,16 @@ static AudioHandler audiohandler(44100 /* Fsample */, 2 /* channels */, AudioHan
 static AudioHandler::State ah_state;      // frame-locked handler state
 static uint64_t ah_len = 0, ah_pos = 0;   // handler length and position, applicable only to playback and record
 
+// window handling
+typedef enum {
+    wsClosed = 0,
+    wsOpen,
+    wsOpened,
+    wsClosing
+} WndState;
+static WndState wnd_settings = wsClosed;  // Settings popup state
+static WndState    wnd_about = wsClosed;  // About popup state
+
 //-----------------------------------------------------------------------------
 // [SECTION] Forward Declarations, Helpers
 //-----------------------------------------------------------------------------
@@ -469,12 +483,16 @@ static void Menu();                       // menu widget
 static void CaptureDevices();             // capture device selection widget
 static void PlaybackDevices();            // playback device selection and volume control widget
 static void AudioControl();               // AudioHandler control widget
+static void ScaleSelector(bool from_settings = false); // scale selection widget
 static void PlaybackProgress();           // playback progress bar
 
 // main window routines
 static void InputControl();               // handle controls
 static void Draw();                       // main drawing routine
 static void ProcessLog();                 // AudioHandler log messages
+
+// settings
+static void SettingsWindow();             // settings window
 
 enum {
     TextAlignLeft = 0,
@@ -564,6 +582,9 @@ void AddFmtTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawLis
 
 void togglePause()
 {
+    if (!ah_state.isPlaying())
+        return;
+
     if (ah_state.canPause())
         audiohandler.pause();
     else if (ah_state.canResume())
@@ -614,6 +635,36 @@ bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault])
     return ret;
 }
 
+bool HandlePopupState(const char *id, WndState &state, const ImVec2 &pos, const ImVec2 &pivot, ImGuiWindowFlags flags = 0)
+{
+    if (state == wsOpen)
+        ImGui::OpenPopup(id);
+    else if (state == wsClosing)
+        state = wsClosed;
+
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing, pivot);
+    if (!ImGui::BeginPopup(id, flags))
+    {
+        if (state == wsOpened)
+            state = wsClosing;
+        else
+            state = wsClosed;
+        return false;
+    }
+    state = wsOpened;
+
+    return true;
+}
+
+inline bool ShowWindow(WndState &state)
+{
+    if (state != wsClosed)
+        return false;
+
+    state = wsOpen;
+    return true;
+}
+
 //-----------------------------------------------------------------------------
 // [SECTION] Backend callbacks
 //-----------------------------------------------------------------------------
@@ -636,6 +687,7 @@ int ImGui::AppInit(int argc, char const *const* argv)
 {
     audiohandler.attachFrameDataCb(sampleCb, nullptr);
     audiohandler.setPlaybackEOFaction(AudioHandler::CmdCapture);
+    audiohandler.setUpdatePlaybackFileName(true);
     audiohandler.log().SetLevel(logger::LOG_WARN);
     audiohandler.enumerate();
 
@@ -706,7 +758,7 @@ bool ImGui::AppConfig()
         0xF026, 0xF028, // volume-off, volume-low, volume-high
         0xF065, 0xF066, // expand, compress
         0xF0c9, 0xF0c9, // bars
-        0xF130, 0xF131, // microphone, microphone-slash
+        0xF129, 0xF131, // info, microphone, microphone-slash
         0xF1DE, 0xF1DE, // sliders
         0xF6A9, 0xF6A9, // volume-xmark
         0
@@ -736,10 +788,14 @@ bool ImGui::AppConfig()
     fonts_reloaded = true;
 
     ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowPadding = ImVec2(font_def_sz / 2 * scale, font_def_sz / 2 * scale);
+    style.ItemSpacing = ImVec2(font_def_sz / 2 * scale, font_def_sz / 2 * scale);
+    style.ItemInnerSpacing = ImVec2(font_def_sz / 4 * scale, font_def_sz / 4 * scale);
     style.FrameRounding = 5.0f * scale;
     style.PopupRounding = 5.0f * scale;
     style.GrabRounding  = 4.0f * scale;
     style.GrabMinSize   = 15.0f * scale;
+    style.ColorButtonPosition = ImGuiDir_Left;
     style.Colors[ImGuiCol_Text] = ImColor(UI_colors[UIIdxDefault]);
 
     widget_padding = font_widget_sz * scale / 10;
@@ -781,10 +837,9 @@ void ImGui::AppNewFrame()
         ImGui::PopFont();
 
         // FIXME move the following to the settings load routine
-        size_t tuner_smooth_len = 3;
+        size_t tuner_smooth_len = TunerSmoothDef;
         f_peak_buf.resize(tuner_smooth_len, -1.0);
         f_peak_buf_pos = 0;
-        c_calib = (float)((std::log2(440.0) - std::log2((double)calibration)) * 12.0 * 100.0) + (float)(transpose * 100);
         //////////
     }
 
@@ -804,10 +859,6 @@ void ImGui::AppNewFrame()
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
-    ImGui::ShowAboutWindow(nullptr);
-
-    ShowToolbarWindow(nullptr);
-
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
     // Body of the main window starts here.
@@ -823,8 +874,8 @@ void ImGui::AppNewFrame()
     {
         Draw();
 
-        // Widgets
-        //  Menu
+        // widgets
+        //  menu
         ImVec2 pos = viewport->Pos + viewport->Size;
         ImVec2 center = pos / 2;
         pos.x -= widget_sz.x + widget_margin + rullbl_sz.x;
@@ -832,13 +883,16 @@ void ImGui::AppNewFrame()
         ImGui::SetCursorPos(pos);
         Menu();
 
-        //  Capture device selector
-        pos.x -= widget_sz.x + widget_margin;
-        ImGui::SetCursorPos(pos);
-        if (ah_state.isPlaying())
-            PlaybackDevices();
-        else
-            CaptureDevices();
+        //  device selector
+        if (but_devices)
+        {
+            pos.x -= widget_sz.x + widget_margin;
+            ImGui::SetCursorPos(pos);
+            if (ah_state.isPlaying())
+                PlaybackDevices();
+            else
+                CaptureDevices();
+        }
 
         // audio control
         pos.x = center.x - widget_sz.x * 1.5f - widget_margin;
@@ -855,6 +909,9 @@ void ImGui::AppNewFrame()
         // End of MainWindow
         ImGui::End();
     }
+
+    SettingsWindow();
+    ImGui::ShowAboutWindow(nullptr);
 }
 
 void ImGui::AppDestroy()
@@ -865,60 +922,6 @@ void ImGui::AppDestroy()
 //-----------------------------------------------------------------------------
 // [SECTION] Child windows
 //-----------------------------------------------------------------------------
-
-void ShowToolbarWindow(bool* p_open)
-{
-    static ImVec2 pos = ImVec2(10.0f, 10.0f);
-    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
-
-    if (!ImGui::Begin("##ToolbarWnd", p_open,
-        ImGuiWindowFlags_AlwaysAutoResize
-        | ImGuiWindowFlags_NoDecoration
-        | ImGuiWindowFlags_NoBackground
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoFocusOnAppearing
-        | ImGuiWindowFlags_NoBringToFrontOnFocus
-        ))
-    {
-        goto defer;
-    }
-
-    if (ImGui::CollapsingHeader("Toolbar", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        if (ImGui::Button("Quit"))
-        {
-            ImGui::AppExit = true;
-        }
-
-        if (ImGui::Button("About"))
-        {
-            aboutwnd = true;
-        }
-
-        ImGui::Checkbox("autoscroll", &autoscroll);
-        ImGui::Checkbox("label on right", &rul_right);
-        ImGui::TextUnformatted("Octave number");
-        ImGui::BeginGroup();
-        ImGui::RadioButton("A4", &oct_offset, OctOffsetA4);
-        ImGui::SameLine(); ImGui::RadioButton("A3", &oct_offset, OctOffsetA3);
-        ImGui::EndGroup();
-        static int p_note_names = note_names;
-        ImGui::TextUnformatted("Note names");
-        ImGui::BeginGroup();
-        ImGui::RadioButton("English", &note_names, NoteNamesEnglish);
-        ImGui::SameLine(); ImGui::RadioButton("Romance", &note_names, NoteNamesRomance);
-        ImGui::EndGroup();
-        if (p_note_names != note_names) { fonts_reloaded = true; p_note_names = note_names; }
-        ImGui::Checkbox("semi lines", &semi_lines);
-        static bool p_semi_lbls = semi_lbls;
-        ImGui::SameLine(); ImGui::Checkbox("semi lbls", &semi_lbls);
-        if (p_semi_lbls != semi_lbls) { fonts_reloaded = true; p_semi_lbls = semi_lbls; }
-        ImGui::Checkbox("scale chroma", &scale_chroma);
-     }
-
-defer:
-    ImGui::End();
-}
 
 void Menu()
 {
@@ -932,7 +935,10 @@ void Menu()
         if (ImGui::Selectable(ICON_FA_FOLDER_OPEN " Open file"))
             OpenAudioFile();
         ImGui::Separator();
-        ImGui::Selectable(ICON_FA_SLIDERS " Settings");
+        if (ImGui::Selectable(ICON_FA_SLIDERS " Settings"))
+            ShowWindow(wnd_settings);
+        if (ImGui::Selectable(ICON_FA_INFO " About"))
+            ShowWindow(wnd_about);
 
         ImGui::EndPopup();
     }
@@ -1047,14 +1053,14 @@ void AudioControl()
 
     // play / pause button
     ImGui::SameLine(0, widget_margin);
-    if (ah_state.canPause())
+    if (ah_state.isPlaying() && ah_state.canPause())
     {
         if (ButtonWidget(ICON_FA_CIRCLE_PAUSE))
             audiohandler.pause();
     }
     else
     {
-        bool can_play = ah_state.hasPlaybackFile && ah_state.isReady();
+        bool can_play = ah_state.hasPlaybackFile && !ah_state.isRecording();
         if (!can_play)
             ImGui::BeginDisabled();
         if (ButtonWidget(ICON_FA_CIRCLE_PLAY))
@@ -1070,6 +1076,11 @@ void AudioControl()
         if (!can_play)
             ImGui::EndDisabled();
     }
+}
+
+void ScaleSelector(bool from_settings)
+{
+    //ImGui::BeginCombo();
 }
 
 void PlaybackProgress()
@@ -1142,7 +1153,7 @@ inline void InputControl()
             c_pos += io.MouseWheel * PlotYScrlSpd;
         }
 
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left, false))
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
             togglePause();
     }
 
@@ -1432,6 +1443,227 @@ void ProcessLog()
     nextN += timedOut;
 }
 
+inline void UpdateCalibration()
+{
+    c_calib = (float)((std::log2(440.0) - std::log2((double)calibration)) * 12.0 * 100.0) + (float)(transpose * 100);
+}
+
+void UpdateSettings()
+{
+
+}
+
+static inline bool ColorPicker(const char *label, ImU32 &color, float split)
+{
+    bool ret = false;
+
+    ImColor col(color);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TableNextColumn();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(split);
+    ImGui::TableNextColumn();
+    ImGui::PushID(label); // use memory address as id
+    ret = ImGui::ColorEdit4("##Picker", (float*)&col, ImGuiColorEditFlags_NoAlpha);
+    ImGui::PopID();
+    if (ret)
+        color = col;
+
+    return ret;
+}
+
+void SettingsWindow()
+{
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImGui::GetMainViewport()->Size * 0.8f);
+    if (!HandlePopupState("Settings", wnd_settings, ImGui::GetMainViewport()->GetCenter(), ImVec2(0.5f, 0.5f), ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        if (wnd_settings == wsClosing)
+            UpdateSettings();
+        return;
+    }
+
+    ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextAlign, ImVec2(0.5f, 0.75f));
+    ImGui::SeparatorText("Settings");
+    ImGui::PopStyleVar();
+
+    ImGui::PushItemWidth(-0.1f);
+    {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Volume threshold");
+        ImGui::SameLine(); ImGui::SliderFloat("##vol_thres", &vol_thres, VolThresMin, VolThresMax, "%.2f");
+    }
+
+    {
+        ImGui::Checkbox("Semitone lines", &semi_lines);
+        static bool p_semi_lbls = semi_lbls;
+        ImGui::SameLine(); ImGui::Checkbox("Semitone labels", &semi_lbls);
+        if (p_semi_lbls != semi_lbls)
+        {
+            p_semi_lbls = semi_lbls;
+            fonts_reloaded = true;
+        }
+        ImGui::Checkbox("Ruller on the right side", &rul_right);
+    }
+
+    {
+        ImGui::BeginGroup();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Octave number: 440Hz =");
+        ImGui::SameLine(); ImGui::RadioButton("A4", &oct_offset, OctOffsetA4);
+        ImGui::SameLine(); ImGui::RadioButton("A3", &oct_offset, OctOffsetA3);
+        ImGui::EndGroup();
+    }
+
+    {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(oct_offset == OctOffsetA4 ? "Calibration A4 =" : "Calibration A3 =");
+        ImGui::SameLine();
+        if (ImGui::SliderInt("##calibration", &calibration, PitchCalibMin, PitchCalibMax, "%d Hz"))
+            UpdateCalibration();
+    }
+
+    {
+        bool update = false;
+        ImGui::BeginGroup();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Transpose");
+        ImGui::SameLine(); update |= ImGui::RadioButton("C Inst.", &transpose, TransposeC);
+        ImGui::SameLine(); update |= ImGui::RadioButton("B♭ Inst.", &transpose, TransposeBb);
+        ImGui::SameLine(); update |= ImGui::RadioButton("E♭ Inst.", &transpose, TransposeEb);
+        ImGui::SameLine(); update |= ImGui::RadioButton("F Inst.", &transpose, TransposeF);
+        ImGui::EndGroup();
+        if (update)
+            UpdateCalibration();
+    }
+
+    {
+        ImGui::AlignTextToFramePadding();
+        ImGui::Checkbox("Enable autoscroll", &autoscroll);
+        if (!autoscroll)
+            ImGui::BeginDisabled();
+        ImGui::SameLine(); ImGui::SliderInt("##velocity", &y_ascr_vel, PlotAScrlVelMin, PlotAScrlVelMax, "velocity = %d");
+        if (!autoscroll)
+            ImGui::EndDisabled();
+    }
+
+    {
+        ImGui::TextUnformatted("Note display");
+        ImGui::Indent();
+        ImGui::Checkbox("Tuner", &show_tuner);
+        ImGui::SameLine(); ImGui::Checkbox("Frequency", &show_freq);
+        ImGui::SameLine();
+        int samples = (int)f_peak_buf.size();
+        if (ImGui::SliderInt("##smoothing", &samples, TunerSmoothMin, TunerSmoothMax, "smoothing = %d"))
+        {
+            f_peak_buf.resize(samples, -1.0);
+            f_peak_buf_pos = 0;
+        }
+        ImGui::Unindent();
+    }
+
+    {
+        ImGui::BeginGroup();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Note names");
+        ImGui::Indent();
+        fonts_reloaded |= ImGui::RadioButton("English    - C, D, E, F, G, A, B", &note_names, NoteNamesEnglish);
+        fonts_reloaded |= ImGui::RadioButton("Romance - Do, Re, Mi, Fa, Sol, La, Si", &note_names, NoteNamesRomance);
+        ImGui::Unindent();
+        ImGui::EndGroup();
+    }
+
+    {
+        ImGui::TextUnformatted("Tempo");
+        ImGui::Indent();
+        ImGui::Checkbox("Show tempo lines", &tempo_grid);
+        ImGui::SameLine(); ImGui::Checkbox("Metronome", &metronome);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(font_def_sz / 8 * scale, font_def_sz / 8 * scale));
+        ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
+        if (ImGui::ArrowButton("##tempo_val_left", ImGuiDir_Left)) { tempo_val > TempoValueMin && tempo_val--; }
+        ImGui::SameLine();
+        if (ImGui::ArrowButton("##tempo_val_right", ImGuiDir_Right)) { tempo_val < TempoValueMax && tempo_val++; }
+        ImGui::PopItemFlag();
+        ImGui::SameLine();
+        ImGui::PopStyleVar();
+        ImGui::SliderInt("##tempo_val", &tempo_val, TempoValueMin, TempoValueMax, "BPM = %d");
+        ImGui::BeginGroup();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Meter");
+        ImGui::SameLine(); ImGui::RadioButton("4/4", &tempo_meter, TempoMeter4_4);
+        ImGui::SameLine(); ImGui::RadioButton("3/4", &tempo_meter, TempoMeter3_4);
+        ImGui::SameLine(); ImGui::RadioButton("None", &tempo_meter, TempoMeterNone);
+        ImGui::EndGroup();
+        ImGui::Unindent();
+    }
+
+    {
+        ImGui::TextUnformatted("UI controls");
+        ImGui::Indent();
+        ImGui::Checkbox("HOLD", &but_hold);
+        ImGui::SameLine(); ImGui::Checkbox("Scale", &but_scale);
+        ImGui::SameLine(); ImGui::Checkbox("Tempo", &but_tempo);
+        ImGui::SameLine(); ImGui::Checkbox("Device selector", &but_devices);
+        ImGui::Unindent();
+    }
+
+    ScaleSelector();
+
+    {
+        ImGui::TextUnformatted("Colors");
+        float split = ImGui::GetWindowSize().x * 0.4f;
+        enum { CloseNone = 0, CloseScale, CloseChromatic };
+        static int closenode = CloseNone;
+
+        ImGui::Indent();
+        ColorPicker("Pitch", plot_colors[PlotIdxPitch], split);
+        ColorPicker("Tempo", plot_colors[PlotIdxTempo], split);
+        ColorPicker("Metronome", plot_colors[PlotIdxMetronome], split);
+        ImGui::Unindent();
+
+        if (closenode == CloseScale)
+            ImGui::SetNextItemOpen(false);
+        if (ImGui::TreeNodeEx("Scale##Colors", scale_chroma ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ColorPicker("1st Tonic", plot_colors[PlotIdxTonic], split);
+            ColorPicker("2nd Supertonic", plot_colors[PlotIdxSupertonic], split);
+            ColorPicker("3rd Mediant", plot_colors[PlotIdxMediant], split);
+            ColorPicker("4th Subdominant", plot_colors[PlotIdxSubdominant], split);
+            ColorPicker("5th Dominant", plot_colors[PlotIdxDominant], split);
+            ColorPicker("6th Subtonic", plot_colors[PlotIdxSubtonic], split);
+            ColorPicker("7th Leading", plot_colors[PlotIdxLeading], split);
+            ColorPicker("Semitone", plot_colors[PlotIdxSemitone], split);
+
+            closenode = CloseChromatic;
+            ImGui::TreePop();
+        }
+
+        if (closenode == CloseChromatic)
+            ImGui::SetNextItemOpen(false);
+        if (ImGui::TreeNodeEx("Chromatic##Colors", scale_chroma ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None))
+        {
+            ColorPicker("C", plot_colors[PlotIdxChromaC], split);
+            ColorPicker("C♯/D♭", plot_colors[PlotIdxChromaCsBb], split);
+            ColorPicker("D", plot_colors[PlotIdxChromaD], split);
+            ColorPicker("D♯/E♭", plot_colors[PlotIdxChromaDsEb], split);
+            ColorPicker("E", plot_colors[PlotIdxChromaE], split);
+            ColorPicker("F", plot_colors[PlotIdxChromaF], split);
+            ColorPicker("F♯/G♭", plot_colors[PlotIdxChromaFsGb], split);
+            ColorPicker("G", plot_colors[PlotIdxChromaG], split);
+            ColorPicker("G♯/A♭", plot_colors[PlotIdxChromaGsAb], split);
+            ColorPicker("A", plot_colors[PlotIdxChromaA], split);
+            ColorPicker("A♯/B♭", plot_colors[PlotIdxChromaAsBb], split);
+            ColorPicker("B", plot_colors[PlotIdxChromaB], split);
+
+            closenode = CloseScale;
+            ImGui::TreePop();
+        }
+    }
+
+    ImGui::PopItemWidth();
+
+    ImGui::EndPopup();
+}
+
 //-----------------------------------------------------------------------------
 // [SECTION] About Window / ShowAboutWindow()
 // Access from Dear ImGui Demo -> Tools -> About
@@ -1439,13 +1671,7 @@ void ProcessLog()
 
 void ImGui::ShowAboutWindow(bool* p_open)
 {
-    if (aboutwnd)
-    {
-        ImGui::OpenPopup("About imVocalPitchMonitor");
-        aboutwnd = false;
-    }
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (!ImGui::BeginPopup("About imVocalPitchMonitor"))
+    if (!HandlePopupState("About imVocalPitchMonitor", wnd_about, ImGui::GetMainViewport()->GetCenter(), ImVec2(0.5f, 0.5f)))
         return;
 
     static const char* VocalPithMonitorURL = "https://play.google.com/store/apps/details?id=com.tadaoyamaoka.vocalpitchmonitor";
