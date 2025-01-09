@@ -160,8 +160,9 @@ Index of this file:
 
 // CONSTANTS
 #define FONT       Font      // symbol names that was given to binary_to_compressed_c when fonts.h being created
-#define FONT_ICONS FontIcons
 #define FONT_NOTES FontMono
+#define FONT_ICONS_REGULAR FARegular
+#define FONT_ICONS_SOLID FASolid
 static constexpr float    font_def_sz = 20.0f;  // default font size, px
 static constexpr float   font_icon_sz = 16.0f;  // default font icon size, px
 static constexpr float font_widget_sz = 28.0f;  // widget icons size, px
@@ -324,6 +325,8 @@ static int      tempo_meter = TempoMeterDef;
 static bool        but_hold = ButtonHoldDef;                                                      //  N/I
 static bool       but_scale = ButtonScaleDef;                                                     //  N/I
 static bool       but_tempo = ButtonTempoDef;                                                     //  N/I
+static float    play_volume = 1.0f;
+static bool            mute = false;
 /*
     palette[ColorRed],
     palette[ColorOrange],
@@ -398,6 +401,7 @@ static ImU32 UI_colors[] = {
     IM_COL32(255, 255, 255,  60),
     IM_COL32(255,   0,  50, 200),
     IM_COL32(180,  80,  80, 255),
+    IM_COL32(255,   0,  50, 255),
     IM_COL32(255,  60,  60, 255),
     IM_COL32(255, 255,  70, 255)
 };
@@ -407,6 +411,7 @@ enum {
     UIIdxButtonHovered,
     UIIdxButtonActive,
     UIIdxProgress,
+    UIIdxCapture,
     UIIdxRecord,
     UIIdxMsgErr,
     UIIdxMsgWarn,
@@ -462,6 +467,8 @@ static void ShowToolbarWindow(bool* p_open);
 //  widgets
 static void Menu();                       // menu widget
 static void CaptureDevices();             // capture device selection widget
+static void PlaybackDevices();            // playback device selection and volume control widget
+static void AudioControl();               // AudioHandler control widget
 static void PlaybackProgress();           // playback progress bar
 
 // main window routines
@@ -513,6 +520,9 @@ int sprintf_s(char *dst, size_t dst_sz, const char *fmt, ...)
 }
 #endif // !_WIN32
 
+// from imgui_internal.h
+template<typename T> static inline T ImClamp(T v, T mn, T mx)                   { return (v < mn) ? mn : (v > mx) ? mx : v; }
+
 void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpidx, int octave, ImU32 color, ImDrawList* draw_list)
 {
     static char label[16];
@@ -560,6 +570,12 @@ void togglePause()
         audiohandler.resume();
 }
 
+void toggleMute()
+{
+    mute = !mute;
+    audiohandler.setPlaybackVolumeFactor(mute ? 0 : play_volume);
+}
+
 void toggleFullscreen()
 {
     if (ImGui::SysIsMaximized())
@@ -580,6 +596,22 @@ void OpenAudioFile()
                             " *.opus"
 #endif
                             , "All Files", "*" }));
+}
+
+bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault])
+{
+    bool ret;
+
+    ImGui::PushFont(font_widget);
+    ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor(color));
+    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxButton]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxButtonHovered]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxButtonActive]));
+    ret = ImGui::Button(text, widget_sz);
+    ImGui::PopStyleColor(4);
+    ImGui::PopFont();
+
+    return ret;
 }
 
 //-----------------------------------------------------------------------------
@@ -660,13 +692,24 @@ bool ImGui::AppConfig()
         0x266D, 0x266F, // ♭, ♯
         0,
     };
-    static const ImWchar ranges_icons[] =
+    static const ImWchar ranges_icons_regular[] =
     {
         0xF07C, 0xF07C, // folder-open
+        0xF111, 0xF111, // circle
+        0xF144, 0xF144, // circle-play
+        0xF28B, 0xF28B, // circle-pause
+        0xF28D, 0xF28D, // circle-stop
+        0
+    };
+    static const ImWchar ranges_icons_solid[] =
+    {
+        0xF026, 0xF028, // volume-off, volume-low, volume-high
+        0xF065, 0xF066, // expand, compress
         0xF0c9, 0xF0c9, // bars
-        0xF130, 0xF130, // microphone
+        0xF130, 0xF131, // microphone, microphone-slash
         0xF1DE, 0xF1DE, // sliders
-        0,
+        0xF6A9, 0xF6A9, // volume-xmark
+        0
     };
     static const ImWchar ranges_notes[] =
     {
@@ -677,12 +720,13 @@ bool ImGui::AppConfig()
         0x266D, 0x266F, // ♭, ♯
         0,
     };
-
     io.Fonts->Clear();
 
     ADD_FONT(font_def, ranges_ui, FONT);
-    MERGE_FONT(font_icon, ranges_icons, FONT_ICONS);
-    ADD_FONT(font_widget, ranges_icons, FONT_ICONS);
+    MERGE_FONT(font_icon, ranges_icons_regular, FONT_ICONS_REGULAR);
+    MERGE_FONT(font_icon, ranges_icons_solid, FONT_ICONS_SOLID);
+    ADD_FONT(font_widget, ranges_icons_regular, FONT_ICONS_REGULAR);
+    MERGE_FONT(font_widget, ranges_icons_solid, FONT_ICONS_SOLID);
     ADD_FONT(font_tuner, ranges_notes, FONT_NOTES);
     ADD_FONT(font_pitch, ranges_notes, FONT_NOTES);
     ADD_FONT(font_grid, ranges_notes, FONT_NOTES);
@@ -695,6 +739,7 @@ bool ImGui::AppConfig()
     style.FrameRounding = 5.0f * scale;
     style.PopupRounding = 5.0f * scale;
     style.GrabRounding  = 4.0f * scale;
+    style.GrabMinSize   = 15.0f * scale;
     style.Colors[ImGuiCol_Text] = ImColor(UI_colors[UIIdxDefault]);
 
     widget_padding = font_widget_sz * scale / 10;
@@ -763,30 +808,6 @@ void ImGui::AppNewFrame()
 
     ShowToolbarWindow(nullptr);
 
-    // Widgets
-    //  Menu
-    ImVec2 pos = viewport->Pos + viewport->Size;
-    pos.x -= widget_sz.x + widget_margin + rullbl_sz.x;
-    pos.y -= widget_sz.y + widget_margin;
-    ImGui::SetNextWindowPos(pos);
-    Menu();
-
-    //  Capture device selector
-    pos.x -= widget_sz.x + widget_margin;
-    ImGui::SetNextWindowPos(pos);
-    CaptureDevices();
-
-    // playback progress
-    if (ah_state.isPlaying())
-    {
-        progress_hgt = widget_margin * (0.4f + progress_hover * 0.5f);
-        pos.x = 0;
-        pos.y = viewport->Size.y - progress_hgt;
-        ImGui::SetNextWindowPos(pos);
-        ImGui::SetNextWindowSize(ImVec2(viewport->Size.x, progress_hgt));
-        PlaybackProgress();
-    }
-
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
     // Body of the main window starts here.
@@ -800,8 +821,35 @@ void ImGui::AppNewFrame()
         | ImGuiWindowFlags_NoBringToFrontOnFocus
         ))
     {
-        InputControl();
         Draw();
+
+        // Widgets
+        //  Menu
+        ImVec2 pos = viewport->Pos + viewport->Size;
+        ImVec2 center = pos / 2;
+        pos.x -= widget_sz.x + widget_margin + rullbl_sz.x;
+        pos.y -= widget_sz.y + widget_margin;
+        ImGui::SetCursorPos(pos);
+        Menu();
+
+        //  Capture device selector
+        pos.x -= widget_sz.x + widget_margin;
+        ImGui::SetCursorPos(pos);
+        if (ah_state.isPlaying())
+            PlaybackDevices();
+        else
+            CaptureDevices();
+
+        // audio control
+        pos.x = center.x - widget_sz.x * 1.5f - widget_margin;
+        ImGui::SetCursorPos(pos);
+        AudioControl();
+
+        // playback progress
+        if (ah_state.isPlaying())
+            PlaybackProgress();
+
+        InputControl();
         ProcessLog();
 
         // End of MainWindow
@@ -874,26 +922,8 @@ defer:
 
 void Menu()
 {
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
-    ImGui::Begin("##Menu", nullptr,
-        ImGuiWindowFlags_AlwaysAutoResize
-        | ImGuiWindowFlags_NoDecoration
-        | ImGuiWindowFlags_NoBackground
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoFocusOnAppearing
-        | ImGuiWindowFlags_NoBringToFrontOnFocus
-        );
-    ImGui::PopStyleVar(2);
-
-    ImGui::PushFont(font_widget);
-    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxButton]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxButtonHovered]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxButtonActive]));
-    if (ImGui::Button(ICON_FA_BARS, widget_sz))
+    if (ButtonWidget(ICON_FA_BARS))
         ImGui::OpenPopup("##MenuPopup");
-    ImGui::PopStyleColor(3);
-    ImGui::PopFont();
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(menu_spacing, menu_spacing));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(menu_spacing, menu_spacing));
@@ -907,37 +937,15 @@ void Menu()
         ImGui::EndPopup();
     }
     ImGui::PopStyleVar(2);
-
-    // End of Menu window
-    ImGui::End();
 }
 
 void CaptureDevices()
 {
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
-    ImGui::Begin("##CaptureDevices", nullptr,
-        ImGuiWindowFlags_AlwaysAutoResize
-        | ImGuiWindowFlags_NoDecoration
-        | ImGuiWindowFlags_NoBackground
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoFocusOnAppearing
-        | ImGuiWindowFlags_NoBringToFrontOnFocus
-        );
-    ImGui::PopStyleVar(2);
-
-    ImGui::PushFont(font_widget);
-    ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor(ah_state.isCapOrRec() ? UI_colors[UIIdxRecord] : UI_colors[UIIdxDefault]));
-    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxButton]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxButtonHovered]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxButtonActive]));
-    if (ImGui::Button(ICON_FA_MICROPHONE, widget_sz))
+    if (ButtonWidget(ICON_FA_MICROPHONE, ah_state.isCapOrRec() ? UI_colors[UIIdxCapture] : UI_colors[UIIdxDefault]))
     {
         audiohandler.enumerate();
         ImGui::OpenPopup("##CaptureDevicesPopup");
     }
-    ImGui::PopStyleColor(4);
-    ImGui::PopFont();
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(menu_spacing, menu_spacing));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(menu_spacing, menu_spacing));
@@ -961,33 +969,126 @@ void CaptureDevices()
         ImGui::EndPopup();
     }
     ImGui::PopStyleVar(2);
+}
 
-    // End of CaptureDevice window
-    ImGui::End();
+void PlaybackDevices()
+{
+    if (ButtonWidget(mute ? ICON_FA_VOLUME_XMARK : ICON_FA_VOLUME_OFF))
+        ImGui::OpenPopup("##PlaybackDevicesPopup");
+
+    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right, false))
+        toggleMute();
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(menu_spacing, menu_spacing));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(menu_spacing, menu_spacing));
+    if (ImGui::BeginPopup("##PlaybackDevicesPopup"))
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextAlign, ImVec2(0.5f, 0.75f));
+        ImGui::SeparatorText("Playback devices");
+        ImGui::PopStyleVar();
+        const AudioHandler::Devices &devices = audiohandler.getPlaybackDevices();
+        for (int n = 0; n < devices.list.size(); n++) {
+            bool is_selected = devices.list[n].name == devices.selectedName;
+            if (ImGui::MenuItem(devices.list[n].name.c_str(), "", is_selected) && !is_selected)
+                audiohandler.setPreferredPlaybackDevice(devices.list[n].name.c_str());
+        }
+        audiohandler.unlockDevices();
+
+        float vol;
+        audiohandler.getPlaybackVolumeFactor(vol);
+        vol *= 100.0f;
+        ImGui::SetNextItemWidth(ImGui::GetWindowSize().x - menu_spacing * 2);
+        if (ImGui::SliderFloat("##VolumeControl", &vol, 0.0f, 100.0f, "Volume %.0f%%"))
+        {
+            // update settings as well
+            audiohandler.setPlaybackVolumeFactor(play_volume = vol / 100.0f);
+            mute = false;
+        }
+
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar(2);
+}
+
+void AudioControl()
+{
+    // stop button
+    bool can_stop = ah_state.isPlaying() || ah_state.isRecording();
+    if (!can_stop)
+        ImGui::BeginDisabled();
+    if (ButtonWidget(ICON_FA_CIRCLE_STOP))
+    {
+        audiohandler.stop();
+        audiohandler.capture();
+    }
+    if (!can_stop)
+        ImGui::EndDisabled();
+
+    // record button
+    ImGui::SameLine(0, widget_margin);
+    // custom render the dot
+    {
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        ImColor color = UI_colors[UIIdxRecord];
+        if (ah_state.isRecording())
+        {
+            float mul = std::sinf((float)ImGui::GetTime() * M_PI * 2.0f) * 0.2f + 0.8f;
+            color.Value.x *= mul;
+            color.Value.y *= mul;
+            color.Value.z *= mul;
+        }
+        draw_list->AddCircleFilled(ImGui::GetCursorPos() + widget_sz / 2, widget_sz.x * 0.15f, color);
+    }
+    if (ButtonWidget(ICON_FA_CIRCLE))
+    {
+        audiohandler.stop();
+        audiohandler.record("f:\\temp\\record.wav");
+    }
+
+    // play / pause button
+    ImGui::SameLine(0, widget_margin);
+    if (ah_state.canPause())
+    {
+        if (ButtonWidget(ICON_FA_CIRCLE_PAUSE))
+            audiohandler.pause();
+    }
+    else
+    {
+        bool can_play = ah_state.hasPlaybackFile && ah_state.isReady();
+        if (!can_play)
+            ImGui::BeginDisabled();
+        if (ButtonWidget(ICON_FA_CIRCLE_PLAY))
+        {
+            if (ah_state.canResume())
+                audiohandler.resume();
+            else
+            {
+                audiohandler.stop();
+                audiohandler.play();
+            }
+        }
+        if (!can_play)
+            ImGui::EndDisabled();
+    }
 }
 
 void PlaybackProgress()
 {
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
-    ImGui::Begin("##PlaybackProgress", nullptr,
-        ImGuiWindowFlags_AlwaysAutoResize
-        | ImGuiWindowFlags_NoDecoration
-        | ImGuiWindowFlags_NoBackground
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoFocusOnAppearing
-        );
-    ImGui::PopStyleVar(2);
-
-    ImVec2 wsize = ImGui::GetWindowSize();
+    progress_hgt = widget_margin * (0.4f + progress_hover * 0.5f);
+    ImVec2 size = ImGui::GetWindowSize();
+    ImVec2 pos = { 0, size.y - progress_hgt };
+    size.y = progress_hgt;
+    ImGui::SetCursorPos(pos);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
     ImGui::PushStyleColor(ImGuiCol_FrameBg, (ImVec4)ImColor(UI_colors[UIIdxButtonHovered]));
     ImGui::PushStyleColor(ImGuiCol_PlotHistogram, (ImVec4)ImColor(UI_colors[UIIdxProgress]));
-    ImGui::ProgressBar((float)ah_pos / ah_len, wsize, "");
+    ImGui::ProgressBar((float)ah_pos / ah_len, size, "");
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar();
+    ImGui::SetCursorPos(pos); // revert cursor
+    bool seek = ImGui::InvisibleButton("##Seek", size);
 
-    bool hover = ImGui::IsWindowHovered();
+    bool hover = ImGui::IsItemHovered();
     static int grace = 0;
     if (hover != progress_hover)
     {
@@ -1000,21 +1101,18 @@ void PlaybackProgress()
         grace = 0;
     if (hover && progress_hover)
     {
-        ImVec2 mpos = ImGui::GetMousePos();
-        uint64_t seek_to = uint64_t(mpos.x / wsize.x * ah_len);
+        ImVec2 mouse_pos = ImGui::GetMousePos() - ImGui::GetWindowPos();
+        uint64_t seek_to = ImClamp(uint64_t(mouse_pos.x / size.x * ah_len), uint64_t(0), ah_len);
         ImGui::SetTooltip(audiohandler.framesToTime(seek_to).c_str());
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left, false) && ah_state.canSeek())
+        if (seek && ah_state.canSeek())
             audiohandler.seek(seek_to);
     }
-
-    // End of PlaybackProgress window
-    ImGui::End();
 }
 
 inline void InputControl()
 {
     // Mouse
-    if (ImGui::IsWindowHovered())
+    if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered())
     {
         ImGuiIO &io  = ImGui::GetIO();
         ImVec2 wsize = ImGui::GetWindowSize();
@@ -1056,6 +1154,9 @@ inline void InputControl()
 
         if (ImGui::IsKeyPressed(ImGuiKey_F, false))
             toggleFullscreen();
+
+        if (ImGui::IsKeyPressed(ImGuiKey_M, false))
+            toggleMute();
     }
 }
 
