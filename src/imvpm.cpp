@@ -246,7 +246,7 @@ enum {
     ColorCount = IM_ARRAYSIZE(palette)
 };
 
-// scale list, first is the default
+// scale list, first element is the default, last element is used to calculate selector width
 static const char *scale_list[] = {
     "C Major",  "C Minor",  "C♭ Major", "C♯ Major", "C♯ Minor", "D Major",  "D Minor", "D♭ Major",
     "D♯ Minor", "E Major",  "E Minor",  "E♭ Major", "E♭ Minor", "F Major",  "F Minor", "F♯ Major",
@@ -259,9 +259,9 @@ static const char *scale_list[] = {
 static constexpr float VolThresMax =     50.0f;  // Analyzer: volume threshold max value
 static constexpr float VolThresMin =      0.0f;  // Analyzer: volume threshold min value
 static constexpr float VolThresDef =      2.0f;  // Analyzer: volume threshold default value [2.0f]
-static constexpr int   PitchCalibMax =     450;  // pitch calibration max value, Hz
-static constexpr int   PitchCalibMin =     430;  // pitch calibration min value, Hz
-static constexpr int   PitchCalibDef =     440;  // pitch calibration, Hz, default value [440]
+static constexpr float PitchCalibMax =  450.0f;  // pitch calibration max value, Hz
+static constexpr int   PitchCalibMin =  430.0f;  // pitch calibration min value, Hz
+static constexpr int   PitchCalibDef =  440.0f;  // pitch calibration, Hz, default value [440]
 static constexpr int   PlotRangeMax =     8400;  // plot: absolute upper boundary, Cents,  6000..9500, default 8400
 static constexpr int   PlotRangeMin =        0;  // plot: absolute lower boundary, Cents, -1200..1200, default 0
 static constexpr float PlotPosDef =    2400.0f;  // plot: position, Cents, default value [2400.0f]
@@ -337,7 +337,7 @@ static bool       rul_right = PlotRulRightDef;   // vertical axis ruler position
 static bool      semi_lines = PlotSemiLinesDef;
 static bool       semi_lbls = PlotSemiLblsDef;
 static int       oct_offset = OctOffsetDef;
-static int      calibration = PitchCalibDef;
+static float    calibration = PitchCalibDef;
 static int        transpose = TransposeDef;
 static bool      autoscroll = PlotAScrlDef;
 static int       y_ascr_vel = PlotAScrlVelDef;
@@ -454,9 +454,9 @@ static float           c_top =     0.0f;  // current top plot position, Cents
 static float           c_max =  9500.0f;  // current max plot position, Cents
 static float           c_min = -1200.0f;  // current min plot position, Cents
 static float         c_calib =     0.0f;  // calibrated and transposed offset, Cents
-static int         scale_key =        0;  // plot: scale key                                           N/I [settings/loadscale]
-static bool      scale_major =     true;  // plot: scale is Major                                      N/I [settings/loadscale]
-static bool     scale_chroma =    false;  // plot: scale is Cromatic                                   N/I [settings/loadscale]
+static int         scale_key =        0;  // plot: scale key
+static bool      scale_major =     true;  // plot: scale is Major
+static bool     scale_chroma =    false;  // plot: scale is Chromatic
 static float      x_peak_off =     0.0f;  // peak note position offset
 static ImVec2      rullbl_sz;             // vertical axis ruler size
 static ImVec2      widget_sz;             // UI widget size
@@ -812,6 +812,7 @@ bool ImGui::AppConfig()
         0xF07C, 0xF07C, // folder-open
         0xF111, 0xF111, // circle
         0xF144, 0xF144, // circle-play
+        0xF256, 0xF256, // hand
         0xF28B, 0xF28B, // circle-pause
         0xF28D, 0xF28D, // circle-stop
         0
@@ -952,6 +953,18 @@ void ImGui::AppNewFrame()
                 PlaybackDevices();
             else
                 CaptureDevices();
+        }
+
+        if (!autoscroll)
+        {
+            pos.x -= widget_sz.x + widget_margin;
+            ImGui::SetCursorPos(pos);
+            ImGui::PushFont(font_widget);
+            ImGui::PushStyleColor(ImGuiCol_Text, GetColorU32(UI_colors[UIIdxDefault], 0.25f));
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(ICON_FA_HAND);
+            ImGui::PopStyleColor();
+            ImGui::PopFont();
         }
 
         // audio control
@@ -1332,6 +1345,9 @@ inline void InputControl()
         if (ImGui::IsKeyPressed(ImGuiKey_Space, false))
             togglePause();
 
+        if (ImGui::IsKeyPressed(ImGuiKey_A, false))
+            autoscroll = !autoscroll;
+
         if (ImGui::IsKeyPressed(ImGuiKey_F, false))
             toggleFullscreen();
 
@@ -1679,7 +1695,7 @@ void SettingsWindow()
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(oct_offset == OctOffsetA4 ? "Calibration A4 =" : "Calibration A3 =");
         ImGui::SameLine();
-        if (ImGui::SliderInt("##calibration", &calibration, PitchCalibMin, PitchCalibMax, "%d Hz"))
+        if (ImGui::SliderFloat("##calibration", &calibration, PitchCalibMin, PitchCalibMax, "%.1f Hz"))
             UpdateCalibration();
     }
 
