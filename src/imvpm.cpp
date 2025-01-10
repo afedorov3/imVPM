@@ -32,6 +32,12 @@
 // - With Visual Assist installed: ALT+G ("VAssistX.GoToImplementation") can also follow symbols in comments.
 
 /*
+TODO:
+    autoscroll grace on manual scroll
+    restart capture if idle
+*/
+
+/*
 
 Index of this file:
 
@@ -176,7 +182,7 @@ static constexpr float         dc_max = 400.0f; // plot: max diff between data p
 
 // LUTs
 static constexpr const char *lut_note[][12] = {
-                                             {  "C",  "C",  "D",  "D",  "E",  "F",  "F",  "G",  "G",  "A",  "A",  "B" }, // NoteNamesEnglish
+                                             {  "C",  "C",  "D",  "D",  "E",  "F",  "F",  "G",  "G",  "A",  "A",  "B" }, // NoteNamesEnglish, has to be the first
                                              {  "Do", "Do", "Re", "Re", "Mi", "Fa", "Fa", "Sol","Sol","La", "La", "Si"}  // NoteNamesRomance
                                               };
 static constexpr const char *lut_semisym[] = {   "",  "♯",  " " }; // semitone symbol selector, [0] elem for labels with no semitone indicator
@@ -215,10 +221,10 @@ constexpr const ImU32 palette[] = {
     IM_COL32( 32,  32,  32, 255),  // DARK GRAY
 };
 const char *palette_names[] = {
-    "RED",    "PINK",        "PURPLE", "INDIGO",
-    "BLUE",   "LIGHT BLUE",  "CYAN",   "TEAL",
-    "GREEN",  "LIGHT GREEN", "LIME",   "YELLOW",
-    "ORANGE", "LIGHT GRAY",  "GRAY",   "DARK GRAY",
+       "RED",        "PINK", "PURPLE",    "INDIGO",
+      "BLUE",  "LIGHT BLUE",   "CYAN",      "TEAL",
+     "GREEN", "LIGHT GREEN",   "LIME",    "YELLOW",
+    "ORANGE",  "LIGHT GRAY",   "GRAY", "DARK GRAY",
 };
 enum {
     ColorRed = 0,
@@ -238,6 +244,14 @@ enum {
     ColorGray,
     ColorDarkGray,
     ColorCount = IM_ARRAYSIZE(palette)
+};
+
+// scale list, first is the default
+static const char *scale_list[] = {
+    "C Major",  "C Minor",  "C♭ Major", "C♯ Major", "C♯ Minor", "D Major",  "D Minor", "D♭ Major",
+    "D♯ Minor", "E Major",  "E Minor",  "E♭ Major", "E♭ Minor", "F Major",  "F Minor", "F♯ Major",
+    "F♯ Minor", "G Major",  "G Minor",  "G♭ Major", "G♯ Minor", "A Major",  "A Minor", "A♭ Major",
+    "A♭ Minor", "A♯ Minor", "B Major",  "B Minor",  "B♭ Major", "B♭ Minor", "Chromatic"
 };
 
 // SETTINGS
@@ -265,6 +279,7 @@ static constexpr int   PlotAScrlVelMax =    10;  // plot: vertical autoscroll ma
 static constexpr int   PlotAScrlVelMin =     1;  // plot: vertical autoscroll min value, Cents
 static constexpr int   PlotAScrlVelDef =     3;  // plot: vertical autoscroll, Cents, default value [3]
 static constexpr int   PlotAScrlMar =      100;  // plot: vertical autoscroll margin, Cents
+static constexpr bool  PlotRulRightDef =  true;  // plot: ruller on the right side, default value [false] FIXME default
 static constexpr bool  PlotSemiLinesDef = true;  // plot: draw semitone lines if not on Chromatic scale, default value
 static constexpr bool  PlotSemiLblsDef = false;  // plot: draw semitone label, default value
 static constexpr bool  ShowFreqDef =     false;  // show average pitch frequency by default [false]
@@ -283,18 +298,18 @@ static constexpr bool  ButtonTempoDef =   true;  // UI: show tempo selector by d
 static constexpr bool  ButtonDevsDef =    true;  // UI: show device selector by default [true]
 
 // selections
-enum {                                         // settings: note naming scheme
-    NoteNamesEnglish = 0,                        //   English
-    NoteNamesRomance = 1,                        //   Romance
-    NoteNamesCount   = IM_ARRAYSIZE(lut_note), // scheme count
-    NoteNamesDef     = NoteNamesEnglish        // default value
+enum {                                           // settings: note naming scheme
+    NoteNamesEnglish = 0,                          //   English
+    NoteNamesRomance = 1,                          //   Romance
+    NoteNamesCount   = IM_ARRAYSIZE(lut_note),   // scheme count
+    NoteNamesDef     = NoteNamesEnglish          // default value
 };
-enum {                                         // plot: octave offset
-    OctOffsetA3  = 0,                            // A3
-    OctOffsetA4  = 1,                            // A4
-    OctOffsetMax = OctOffsetA4,                // max value
-    OctOffsetMin = OctOffsetA3,                // min value
-    OctOffsetDef = OctOffsetA4                 // default
+enum {                                    // plot: octave offset
+    OctOffsetA3  = 0,                       // A3
+    OctOffsetA4  = 1,                       // A4
+    OctOffsetMax = OctOffsetA4,           // max value
+    OctOffsetMin = OctOffsetA3,           // min value
+    OctOffsetDef = OctOffsetA4            // default
 };
 enum {                              // plot: scale transpose
     TransposeC   =  0,                //   C  Inst
@@ -314,10 +329,11 @@ enum {                              // plot: tempo metering scheme
     TempoMeterDef = TempoMeter4_4   // default value
 };
 
-static float      vol_thres = VolThresDef;                                                        //  N/I
+static float      vol_thres = VolThresDef;
 static float         x_zoom = PlotXZoomDef;
 static float         y_zoom = PlotYZoomDef;
-static float          c_pos = PlotPosDef;         // plot current bottom position, Cents
+static float          c_pos = PlotPosDef;        // plot current bottom position, Cents
+static bool       rul_right = PlotRulRightDef;   // vertical axis ruler position
 static bool      semi_lines = PlotSemiLinesDef;
 static bool       semi_lbls = PlotSemiLblsDef;
 static int       oct_offset = OctOffsetDef;
@@ -333,11 +349,12 @@ static int        tempo_val = TempoValueDef;
 static bool      tempo_grid = TempoGridDef;
 static int      tempo_meter = TempoMeterDef;
 static bool        but_hold = ButtonHoldDef;                                                      //  N/I
-static bool       but_scale = ButtonScaleDef;                                                     //  N/I
+static bool       but_scale = ButtonScaleDef;
 static bool       but_tempo = ButtonTempoDef;                                                     //  N/I
 static bool     but_devices = ButtonDevsDef;
 static float    play_volume = 1.0f;
 static bool            mute = false;
+static std::string scale_str; 
 
 static ImU32 plot_colors[] = {  // Plot palete, fixed order up to and including pitch
     palette[ColorDarkGray],       //   Semitone
@@ -411,9 +428,9 @@ static ImU32 UI_colors[] = {
 };
 enum {
     UIIdxDefault = 0,
-    UIIdxButton,
-    UIIdxButtonHovered,
-    UIIdxButtonActive,
+    UIIdxWidget,
+    UIIdxWidgetHovered,
+    UIIdxWidgetActive,
     UIIdxProgress,
     UIIdxCapture,
     UIIdxRecord,
@@ -440,17 +457,17 @@ static float         c_calib =     0.0f;  // calibrated and transposed offset, C
 static int         scale_key =        0;  // plot: scale key                                           N/I [settings/loadscale]
 static bool      scale_major =     true;  // plot: scale is Major                                      N/I [settings/loadscale]
 static bool     scale_chroma =    false;  // plot: scale is Cromatic                                   N/I [settings/loadscale]
-static bool        rul_right =     true;  // vertical axis ruler position
 static float      x_peak_off =     0.0f;  // peak note position offset
 static ImVec2      rullbl_sz;             // vertical axis ruler size
 static ImVec2      widget_sz;             // UI widget size
 static float   widget_margin;             // UI widget margin
 static float  widget_padding;             // UI widget padding
 static float    menu_spacing;             // UI menu spacing
+static float   scale_sel_wdt;             // UI scale selector width
 static float    progress_hgt;             // UI playback progress height
 static bool   progress_hover =    false;  // UI playback progress is hovered
 static std::vector<double> f_peak_buf;    // peak frequency averaging buffer
-static size_t f_peak_buf_pos = 0;         // peak frequency averaging buffer position
+static size_t f_peak_buf_pos =        0;  // peak frequency averaging buffer position
 
 typedef std::unique_ptr<pfd::open_file> unique_open_file;
 static unique_open_file open_file_dlg = nullptr; // open file dialog operation
@@ -484,6 +501,7 @@ static void PlaybackDevices();            // playback device selection and volum
 static void AudioControl();               // AudioHandler control widget
 static void ScaleSelector(bool from_settings = false); // scale selection widget
 static void PlaybackProgress();           // playback progress bar
+static bool ColorPicker(const char *label, ImU32 &color, float split = 0.0f); // color picker with palette
 
 // main window routines
 static void InputControl();               // handle controls
@@ -491,6 +509,8 @@ static void Draw();                       // main drawing routine
 static void ProcessLog();                 // AudioHandler log messages
 
 // settings
+static void LoadSettings();               // settings load routine
+static void SaveSettings();               // settings save routine
 static void SettingsWindow();             // settings window
 
 enum {
@@ -536,6 +556,13 @@ int sprintf_s(char *dst, size_t dst_sz, const char *fmt, ...)
     return ret;
 }
 #endif // !_WIN32
+
+// by Joseph @ https://stackoverflow.com/questions/874134/find-out-if-string-ends-with-another-string-in-c
+inline bool ends_with(std::string const & value, std::string const & ending)
+{
+    if (ending.size() > value.size()) return false;
+    return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
+}
 
 // from imgui_internal.h
 template<typename T> static inline T ImClamp(T v, T mn, T mx)                   { return (v < mn) ? mn : (v > mx) ? mx : v; }
@@ -618,15 +645,50 @@ void OpenAudioFile()
                             , "All Files", "*" }));
 }
 
+inline void UpdateCalibration()
+{
+    c_calib = (float)((std::log2(440.0) - std::log2((double)calibration)) * 12.0 * 100.0) + (float)(transpose * 100);
+}
+
+void UpdateScale()
+{
+    if (scale_str.compare(0, std::string::npos, "Chromatic") == 0)
+    {
+        scale_chroma = true;
+        return;
+    }
+
+    char ch1 = scale_str.at(0);
+    const char **names = (const char**)lut_note[0];
+    int key = 0;
+    for (size_t n = 0; n < IM_ARRAYSIZE(lut_note[0]); n++)
+    {
+        if (ch1 == names[n][0])
+        {
+            key = n;
+            break;
+        }
+    }
+
+    if (scale_str.compare(1, strlen("♯"), "♯") == 0)
+        key++;
+    else if (scale_str.compare(1, strlen("♭"), "♭") == 0)
+        key--;
+
+    scale_key = (key + IM_ARRAYSIZE(lut_note[0])) % IM_ARRAYSIZE(lut_note[0]);
+    scale_major = ends_with(scale_str, "Major");
+    scale_chroma = false;
+}
+
 bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault])
 {
     bool ret;
 
     ImGui::PushFont(font_widget);
     ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor(color));
-    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxButton]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxButtonHovered]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxButtonActive]));
+    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
     ret = ImGui::Button(text, widget_sz);
     ImGui::PopStyleColor(4);
     ImGui::PopFont();
@@ -684,6 +746,8 @@ void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData,
 
 int ImGui::AppInit(int argc, char const *const* argv)
 {
+    LoadSettings();
+
     audiohandler.attachFrameDataCb(sampleCb, nullptr);
     audiohandler.setPlaybackEOFaction(AudioHandler::CmdCapture);
     audiohandler.setUpdatePlaybackFileName(true);
@@ -834,12 +898,9 @@ void ImGui::AppNewFrame()
         ImGui::PushFont(font_pitch);
         x_peak_off = ImGui::CalcTextSize("8").x * 1.5f;
         ImGui::PopFont();
-
-        // FIXME move the following to the settings load routine
-        size_t tuner_smooth_len = TunerSmoothDef;
-        f_peak_buf.resize(tuner_smooth_len, -1.0);
-        f_peak_buf_pos = 0;
-        //////////
+        ImGui::PushFont(font_def);
+        scale_sel_wdt = ImGui::CalcTextSize(scale_list[IM_ARRAYSIZE(scale_list) - 1]).x + menu_spacing * 4;
+        ImGui::PopFont();
     }
 
     // process file operations
@@ -877,7 +938,7 @@ void ImGui::AppNewFrame()
         //  menu
         ImVec2 pos = viewport->Pos + viewport->Size;
         ImVec2 center = pos / 2;
-        pos.x -= widget_sz.x + widget_margin + rullbl_sz.x;
+        pos.x -= widget_sz.x + widget_margin + rullbl_sz.x * rul_right;
         pos.y -= widget_sz.y + widget_margin;
         ImGui::SetCursorPos(pos);
         Menu();
@@ -898,6 +959,15 @@ void ImGui::AppNewFrame()
         ImGui::SetCursorPos(pos);
         AudioControl();
 
+        // scale
+        if (but_scale)
+        {
+            pos.x = widget_margin + rullbl_sz.x * !rul_right;
+            pos.y = widget_margin;
+            ImGui::SetCursorPos(pos);
+            ScaleSelector();
+        }
+
         // playback progress
         if (ah_state.isPlaying())
             PlaybackProgress();
@@ -915,7 +985,7 @@ void ImGui::AppNewFrame()
 
 void ImGui::AppDestroy()
 {
-
+    SaveSettings();
 }
 
 //-----------------------------------------------------------------------------
@@ -1079,7 +1149,41 @@ void AudioControl()
 
 void ScaleSelector(bool from_settings)
 {
-    //ImGui::BeginCombo();
+    ImGuiComboFlags flags = ImGuiComboFlags_None;
+    if (!from_settings)
+        flags |= ImGuiComboFlags_NoArrowButton;
+
+    if (!from_settings)
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(menu_spacing, menu_spacing));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(menu_spacing, menu_spacing));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
+        ImGui::SetNextItemWidth(scale_sel_wdt);
+    }
+    if (ImGui::BeginCombo("##Scale", scale_str.c_str(), flags))
+    {
+        for (int n = 0; n < IM_ARRAYSIZE(scale_list); n++)
+        {
+            const bool is_selected = scale_str.compare(0, std::string::npos, scale_list[n]) == 0;
+            if (ImGui::Selectable(scale_list[n], is_selected))
+            {
+                scale_str = scale_list[n];
+                UpdateScale();
+            }
+
+            // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
+            if (is_selected)
+                ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+    if (!from_settings)
+    {
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar(2);
+    }
 }
 
 void PlaybackProgress()
@@ -1090,7 +1194,7 @@ void PlaybackProgress()
     size.y = progress_hgt;
     ImGui::SetCursorPos(pos);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, (ImVec4)ImColor(UI_colors[UIIdxButtonHovered]));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
     ImGui::PushStyleColor(ImGuiCol_PlotHistogram, (ImVec4)ImColor(UI_colors[UIIdxProgress]));
     ImGui::ProgressBar((float)ah_pos / ah_len, size, "");
     ImGui::PopStyleColor(2);
@@ -1117,6 +1221,72 @@ void PlaybackProgress()
         if (seek && ah_state.canSeek())
             audiohandler.seek(seek_to);
     }
+}
+
+bool ColorPicker(const char *label, ImU32 &color, float split)
+{
+    float button_width(100.0f * scale);
+    static ImColor backup_color;
+    bool ret = false;
+
+    ImColor col(color);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(split >= 0.0f ? split : ImGui::GetContentRegionAvail().x + ImGui::GetCursorPos().x - button_width);
+    ImGui::PushID(label); // use memory address as id
+    if (ImGui::ColorButton("##ColorButton", col, ImGuiColorEditFlags_NoAlpha, ImVec2(button_width, ImGui::GetFrameHeight())))
+    {
+        ImGui::OpenPopup("##PaletePicker");
+        backup_color = color;
+    }
+    if (ImGui::BeginPopup("##PaletePicker"))
+    {
+        ImVec2 item_sz = ImVec2(20, 20) * scale;
+        constexpr size_t row_sz(4);
+
+        float spacing = ImGui::GetStyle().ItemSpacing.y;
+        ImVec2 preview_sz = (item_sz + ImGui::GetStyle().ItemSpacing) * row_sz;
+        preview_sz.y *= font_def_sz / 32.0f; // adjust for best fit
+
+        ImGui::Text("Pick a color");
+        ImGui::Separator();
+        if (ImGui::ColorPicker4("##ColorPicker", (float*)&col, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoSmallPreview))
+        {
+            color = col;
+            ret = true;
+        }
+        ImGui::SameLine();
+
+        ImGui::BeginGroup(); // Lock X position
+        ImGui::Text("Current");
+        ImGui::ColorButton("##Current", col, ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_AlphaPreviewHalf, preview_sz);
+        ImGui::Text("Previous");
+        if (ImGui::ColorButton("##Previous", backup_color, ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_AlphaPreviewHalf, preview_sz))
+            color = backup_color;
+        ImGui::Separator();
+        ImGui::Text("Palette");
+        
+        for (int n = 0; n < ColorCount; n++)
+        {
+            ImGui::PushID(n);
+            if ((n % row_sz) != 0)
+                ImGui::SameLine(0.0f, spacing);
+
+            ImGuiColorEditFlags palette_button_flags = ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoSmallPreview;
+            if (ImGui::ColorButton("##PaletteItem", ImColor(palette[n]), palette_button_flags, item_sz))
+            {
+                color = palette[n];
+                ret = true;
+            }
+            ImGui::SetItemTooltip(palette_names[n]);
+            ImGui::PopID();
+        }
+        ImGui::EndGroup();
+        ImGui::EndPopup();
+    }
+    ImGui::PopID();
+
+    return ret;
 }
 
 inline void InputControl()
@@ -1442,80 +1612,18 @@ void ProcessLog()
     nextN += timedOut;
 }
 
-inline void UpdateCalibration()
+void LoadSettings()
 {
-    c_calib = (float)((std::log2(440.0) - std::log2((double)calibration)) * 12.0 * 100.0) + (float)(transpose * 100);
+    f_peak_buf.resize(TunerSmoothDef, -1.0);
+    f_peak_buf_pos = 0;
+    scale_str = scale_list[0];
+    UpdateCalibration();
+    UpdateScale();
 }
 
-void UpdateSettings()
+void SaveSettings()
 {
 
-}
-
-static inline bool ColorPicker(const char *label, ImU32 &color, float split = 0.0f)
-{
-    float button_width(100.0f * scale);
-    static ImColor backup_color;
-    bool ret = false;
-
-    ImColor col(color);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
-    ImGui::SameLine(split >= 0.0f ? split : ImGui::GetContentRegionAvail().x + ImGui::GetCursorPos().x - button_width);
-    ImGui::PushID(label); // use memory address as id
-    if (ImGui::ColorButton("##ColorButton", col, ImGuiColorEditFlags_NoAlpha, ImVec2(button_width, ImGui::GetFrameHeight())))
-    {
-        ImGui::OpenPopup("##PaletePicker");
-        backup_color = color;
-    }
-    if (ImGui::BeginPopup("##PaletePicker"))
-    {
-        ImVec2 item_sz = ImVec2(20, 20) * scale;
-        constexpr size_t row_sz(4);
-
-        float spacing = ImGui::GetStyle().ItemSpacing.y;
-        ImVec2 preview_sz = (item_sz + ImGui::GetStyle().ItemSpacing) * row_sz;
-        preview_sz.y *= font_def_sz / 32.0f; // adjust for best fit
-
-        ImGui::Text("Pick a color");
-        ImGui::Separator();
-        if (ImGui::ColorPicker4("##ColorPicker", (float*)&col, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoSmallPreview))
-        {
-            color = col;
-            ret = true;
-        }
-        ImGui::SameLine();
-
-        ImGui::BeginGroup(); // Lock X position
-        ImGui::Text("Current");
-        ImGui::ColorButton("##Current", col, ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_AlphaPreviewHalf, preview_sz);
-        ImGui::Text("Previous");
-        if (ImGui::ColorButton("##Previous", backup_color, ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_AlphaPreviewHalf, preview_sz))
-            color = backup_color;
-        ImGui::Separator();
-        ImGui::Text("Palette");
-        
-        for (int n = 0; n < ColorCount; n++)
-        {
-            ImGui::PushID(n);
-            if ((n % row_sz) != 0)
-                ImGui::SameLine(0.0f, spacing);
-
-            ImGuiColorEditFlags palette_button_flags = ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoSmallPreview;
-            if (ImGui::ColorButton("##PaletteItem", ImColor(palette[n]), palette_button_flags, item_sz))
-            {
-                color = palette[n];
-                ret = true;
-            }
-            ImGui::SetItemTooltip(palette_names[n]);
-            ImGui::PopID();
-        }
-        ImGui::EndGroup();
-        ImGui::EndPopup();
-    }
-    ImGui::PopID();
-
-    return ret;
 }
 
 void SettingsWindow()
@@ -1524,7 +1632,7 @@ void SettingsWindow()
     if (!HandlePopupState("Settings", wnd_settings, ImGui::GetMainViewport()->GetCenter(), ImVec2(0.5f, 0.5f), ImGuiWindowFlags_AlwaysAutoResize))
     {
         if (wnd_settings == wsClosing)
-            UpdateSettings();
+            SaveSettings();
         return;
     }
 
@@ -1532,13 +1640,18 @@ void SettingsWindow()
     ImGui::SeparatorText("Settings");
     ImGui::PopStyleVar();
 
-    ImGui::PushItemWidth(-0.1f);
+    ImGui::PushItemWidth(-1.0f);
+
+    // Analyzer control
     {
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Volume threshold");
-        ImGui::SameLine(); ImGui::SliderFloat("##vol_thres", &vol_thres, VolThresMin, VolThresMax, "%.2f");
+        ImGui::SameLine();
+        if (ImGui::SliderFloat("##vol_thres", &vol_thres, VolThresMin, VolThresMax, "%.2f"))
+            analyzer.set_threshold((double)vol_thres);
     }
 
+    // grid control
     {
         ImGui::Checkbox("Semitone lines", &semi_lines);
         static bool p_semi_lbls = semi_lbls;
@@ -1551,6 +1664,7 @@ void SettingsWindow()
         ImGui::Checkbox("Ruller on the right side", &rul_right);
     }
 
+    // octave reference
     {
         ImGui::BeginGroup();
         ImGui::AlignTextToFramePadding();
@@ -1560,6 +1674,7 @@ void SettingsWindow()
         ImGui::EndGroup();
     }
 
+    // calibration
     {
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(oct_offset == OctOffsetA4 ? "Calibration A4 =" : "Calibration A3 =");
@@ -1568,6 +1683,7 @@ void SettingsWindow()
             UpdateCalibration();
     }
 
+    // transpose
     {
         bool update = false;
         ImGui::BeginGroup();
@@ -1582,6 +1698,7 @@ void SettingsWindow()
             UpdateCalibration();
     }
 
+    // autoscroll
     {
         ImGui::AlignTextToFramePadding();
         ImGui::Checkbox("Enable autoscroll", &autoscroll);
@@ -1592,6 +1709,7 @@ void SettingsWindow()
             ImGui::EndDisabled();
     }
 
+    // pitch and tuner control
     {
         ImGui::TextUnformatted("Note display");
         ImGui::Indent();
@@ -1607,6 +1725,7 @@ void SettingsWindow()
         ImGui::Unindent();
     }
 
+    // note naming scheme
     {
         ImGui::BeginGroup();
         ImGui::AlignTextToFramePadding();
@@ -1618,6 +1737,7 @@ void SettingsWindow()
         ImGui::EndGroup();
     }
 
+    // tempo control
     {
         ImGui::TextUnformatted("Tempo");
         ImGui::Indent();
@@ -1642,6 +1762,7 @@ void SettingsWindow()
         ImGui::Unindent();
     }
 
+    // UI behavior
     {
         ImGui::TextUnformatted("UI controls");
         ImGui::Indent();
@@ -1652,8 +1773,14 @@ void SettingsWindow()
         ImGui::Unindent();
     }
 
-    ScaleSelector();
+    // scale selector
+    {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Scale");
+        ImGui::SameLine(); ScaleSelector(true /* from_settings */);
+    }
 
+    // color settings
     {
         ImGui::TextUnformatted("Colors");
         enum { CloseNone = 0, CloseScale, CloseChromatic };
