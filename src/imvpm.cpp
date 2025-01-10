@@ -165,10 +165,10 @@ Index of this file:
 //-----------------------------------------------------------------------------
 
 // CONSTANTS
-#define FONT       Font      // symbol names that was given to binary_to_compressed_c when fonts.h being created
-#define FONT_NOTES FontMono
+#define FONT               Font      // symbol names that was given to binary_to_compressed_c when fonts.h being created
+#define FONT_NOTES         FontMono
 #define FONT_ICONS_REGULAR FARegular
-#define FONT_ICONS_SOLID FASolid
+#define FONT_ICONS_SOLID   FASolid
 static constexpr float    font_def_sz = 20.0f;  // default font size, px
 static constexpr float   font_icon_sz = 16.0f;  // default font icon size, px
 static constexpr float font_widget_sz = 28.0f;  // widget icons size, px
@@ -955,6 +955,7 @@ void ImGui::AppNewFrame()
                 CaptureDevices();
         }
 
+        // manual scroll indicator
         if (!autoscroll)
         {
             pos.x -= widget_sz.x + widget_margin;
@@ -1863,8 +1864,8 @@ void ImGui::ShowAboutWindow(bool* p_open)
         return;
 
     static const char* VocalPithMonitorURL = "https://play.google.com/store/apps/details?id=com.tadaoyamaoka.vocalpitchmonitor";
-    ImGui::Text("imVocalPitchMonitor %s", IMVPM_VERSION_DISPLAY);
-    ImGui::Text("%s", IMVPM_DATE_AUTHOR);
+    ImGui::Text("imVocalPitchMonitor %s", VER_VERSION_DISPLAY);
+    ImGui::Text("%s", VER_DATE_AUTHOR);
     ImGui::TextUnformatted("Ported from*"); ImGui::SameLine();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("All core features code is stolen from decompiled original apk.");

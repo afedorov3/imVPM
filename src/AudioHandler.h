@@ -7,7 +7,7 @@
 #include <condition_variable>
 #include <deque>
 
-#include "Logger.h"
+#include "Logger.hpp"
 
 #define MA_NO_RESOURCE_MANAGER
 #define MA_NO_GENERATION

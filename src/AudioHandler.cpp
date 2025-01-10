@@ -135,7 +135,6 @@ static ma_result encoder_init_file(const char* pFilePath, const ma_encoder_confi
 #define encoder_init_file ma_encoder_init_file
 #endif // !defined(MA_WIN32)
 
-#include "Logger.h"
 using namespace logger;
 
 static void ah_log_callback(void* pUserData, ma_uint32 level, const char* pMessage)

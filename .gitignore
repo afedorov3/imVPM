@@ -1,7 +1,6 @@
 *.7z
 archive
 assets/ah
-assets/fonts
 assets/reverse
 assets/test-data
 assets/*.cmd
