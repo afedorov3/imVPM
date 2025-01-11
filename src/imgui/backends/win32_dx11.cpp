@@ -31,7 +31,7 @@ static UINT_PTR                 g_idGlobalRefreshTimer = 0;
 
        ImRect                   ImGui::SysWinPos  = ImRect(100, 100, 1280, 800);
        ImVec4                   ImGui::SysBgColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
-       bool                     ImGui::AppFocus = false;
+       bool                     ImGui::SysFocus = false;
        bool                     ImGui::AppExit = false;
        bool                     ImGui::AppReconfigure = false;
        ImU32                    ImGui::DPI = USER_DEFAULT_SCREEN_DPI;
@@ -300,7 +300,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         break;
     case WM_ACTIVATE:
-        ImGui::AppFocus = (bool)wParam;
+        ImGui::SysFocus = (bool)wParam;
         break;
     case WM_SIZE:
         if (wParam == SIZE_MINIMIZED)

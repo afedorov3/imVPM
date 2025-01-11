@@ -475,6 +475,7 @@ static ImVec2      widget_sz;             // UI widget size
 static float   widget_margin;             // UI widget margin
 static float  widget_padding;             // UI widget padding
 static float    menu_spacing;             // UI menu spacing
+static ImVec2       tempo_sz;             // UI tempo widget size
 static float   scale_sel_wdt;             // UI scale selector width
 static float    progress_hgt;             // UI playback progress height
 static bool   progress_hover =    false;  // UI playback progress is hovered
@@ -511,6 +512,7 @@ static void Menu();                       // menu widget
 static void CaptureDevices();             // capture device selection widget
 static void PlaybackDevices();            // playback device selection and volume control widget
 static void AudioControl();               // AudioHandler control widget
+static void TempoControl();               // tempo control widget
 static void ScaleSelector(bool from_settings = false); // scale selection widget
 static void PlaybackProgress();           // playback progress bar
 static bool ColorPicker(const char *label, ImU32 &color, float split = 0.0f); // color picker with palette
@@ -880,6 +882,7 @@ bool ImGui::AppConfig()
         0x2DE0, 0x2DFF, // Cyrillic Extended-A
         0xA640, 0xA69F, // Cyrillic Extended-B
         0x266D, 0x266F, // ♭, ♯
+        0x1D2E, 0x1D3E, // Superscript capital
         0,
     };
     static const ImWchar ranges_icons_regular[] =
@@ -934,6 +937,7 @@ bool ImGui::AppConfig()
     style.PopupRounding = 5.0f * scale;
     style.GrabRounding  = 4.0f * scale;
     style.GrabMinSize   = 15.0f * scale;
+    style.SeparatorTextAlign = ImVec2(0.5f, 0.75f);
     style.ColorButtonPosition = ImGuiDir_Left;
     style.Colors[ImGuiCol_Text] = ImColor(UI_colors[UIIdxDefault]);
 
@@ -975,6 +979,7 @@ void ImGui::AppNewFrame()
         x_peak_off = ImGui::CalcTextSize("8").x * 1.5f;
         ImGui::PopFont();
         ImGui::PushFont(font_def);
+        tempo_sz = ImVec2(ImGui::CalcTextSize("888").x + widget_padding * 2, widget_sz.y + widget_padding * 2);
         scale_sel_wdt = ImGui::CalcTextSize(scale_list[IM_ARRAYSIZE(scale_list) - 1]).x + menu_spacing * 4;
         ImGui::PopFont();
     }
@@ -1045,10 +1050,19 @@ void ImGui::AppNewFrame()
         ImGui::SetCursorPos(pos);
         AudioControl();
 
-        // scale
+        pos.x = widget_margin + rullbl_sz.x * !rul_right;
+
+        // tempo control
+        if (but_tempo)
+        {
+            pos.y -= widget_padding;
+            ImGui::SetCursorPos(pos);
+            TempoControl();
+        }
+
+        // scale selector
         if (but_scale)
         {
-            pos.x = widget_margin + rullbl_sz.x * !rul_right;
             pos.y = widget_margin;
             ImGui::SetCursorPos(pos);
             ScaleSelector();
@@ -1226,6 +1240,57 @@ void AudioControl()
     }
 }
 
+void TempoSettings()
+{
+    ImGui::Checkbox("Tempo grid", &tempo_grid);
+    ImGui::SameLine(); ImGui::Checkbox("Metronome", &metronome);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(font_def_sz / 8 * scale, font_def_sz / 8 * scale));
+    ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
+    if (ImGui::ArrowButton("##TempoSlower", ImGuiDir_Left)) { tempo_val > TempoValueMin && tempo_val--; }
+    ImGui::SameLine();
+    if (ImGui::ArrowButton("##TempoFaster", ImGuiDir_Right)) { tempo_val < TempoValueMax && tempo_val++; }
+    ImGui::PopItemFlag();
+    ImGui::SameLine();
+    ImGui::PopStyleVar();
+    ImGui::SliderInt("##TempoValue", &tempo_val, TempoValueMin, TempoValueMax, "BPM = %d");
+
+    ImGui::BeginGroup();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Meter");
+    ImGui::SameLine(); ImGui::RadioButton("4/4", &tempo_meter, TempoMeter4_4);
+    ImGui::SameLine(); ImGui::RadioButton("3/4", &tempo_meter, TempoMeter3_4);
+    ImGui::SameLine(); ImGui::RadioButton("None", &tempo_meter, TempoMeterNone);
+    ImGui::EndGroup();
+}
+
+void TempoControl()
+{
+    static char label[] = "120\n ᴮᴾᴹ##TempoControl";
+
+    sprintf_s(label, 4, "%3d", tempo_val);
+    label[3] = '\n';
+    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxDefault], 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
+    if (ImGui::Button(label, tempo_sz))
+    {
+        ImGui::OpenPopup("##TempoPopup");
+        ImGui::SetNextWindowPos(ImGui::GetMousePos(), ImGuiCond_Appearing, ImVec2(0, 1.0f));
+    }
+    ImGui::PopStyleColor(4);
+    ImGui::PopStyleVar();
+
+    if (ImGui::BeginPopup("##TempoPopup"))
+    {
+        ImGui::SeparatorText("Tempo");
+        TempoSettings();
+        ImGui::EndPopup();
+    }
+}
+
 void ScaleSelector(bool from_settings)
 {
     ImGuiComboFlags flags = ImGuiComboFlags_None;
@@ -1241,7 +1306,7 @@ void ScaleSelector(bool from_settings)
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
         ImGui::SetNextItemWidth(scale_sel_wdt);
     }
-    if (ImGui::BeginCombo("##Scale", scale_str.c_str(), flags))
+    if (ImGui::BeginCombo("##ScaleSelector", scale_str.c_str(), flags))
     {
         for (int n = 0; n < IM_ARRAYSIZE(scale_list); n++)
         {
@@ -1344,7 +1409,6 @@ bool ColorPicker(const char *label, ImU32 &color, float split)
             color = backup_color;
         ImGui::Separator();
         ImGui::Text("Palette");
-        
         for (int n = 0; n < ColorCount; n++)
         {
             ImGui::PushID(n);
@@ -1361,6 +1425,7 @@ bool ColorPicker(const char *label, ImU32 &color, float split)
             ImGui::PopID();
         }
         ImGui::EndGroup();
+
         ImGui::EndPopup();
     }
     ImGui::PopID();
@@ -1708,9 +1773,7 @@ void SettingsWindow()
         return;
     }
 
-    ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextAlign, ImVec2(0.5f, 0.75f));
     ImGui::SeparatorText("Settings");
-    ImGui::PopStyleVar();
 
     ImGui::PushItemWidth(-1.0f);
 
@@ -1813,24 +1876,7 @@ void SettingsWindow()
     {
         ImGui::TextUnformatted("Tempo");
         ImGui::Indent();
-        ImGui::Checkbox("Show tempo lines", &tempo_grid);
-        ImGui::SameLine(); ImGui::Checkbox("Metronome", &metronome);
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(font_def_sz / 8 * scale, font_def_sz / 8 * scale));
-        ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
-        if (ImGui::ArrowButton("##tempo_val_left", ImGuiDir_Left)) { tempo_val > TempoValueMin && tempo_val--; }
-        ImGui::SameLine();
-        if (ImGui::ArrowButton("##tempo_val_right", ImGuiDir_Right)) { tempo_val < TempoValueMax && tempo_val++; }
-        ImGui::PopItemFlag();
-        ImGui::SameLine();
-        ImGui::PopStyleVar();
-        ImGui::SliderInt("##tempo_val", &tempo_val, TempoValueMin, TempoValueMax, "BPM = %d");
-        ImGui::BeginGroup();
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Meter");
-        ImGui::SameLine(); ImGui::RadioButton("4/4", &tempo_meter, TempoMeter4_4);
-        ImGui::SameLine(); ImGui::RadioButton("3/4", &tempo_meter, TempoMeter3_4);
-        ImGui::SameLine(); ImGui::RadioButton("None", &tempo_meter, TempoMeterNone);
-        ImGui::EndGroup();
+        TempoSettings();
         ImGui::Unindent();
     }
 
