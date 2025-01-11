@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.13)
 project(imVocalPitchMonitor DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
 
+# TODO: dep tests
 set(HAVE_OPUS "yes")
+
+# fonts
 set(UI_FONT "external/fonts/DejaVuSans.ttf")
 set(UI_FONT_MONO "external/fonts/DejaVuSansMono.ttf")
 set(FA_REGULAR "external/fonts/Font Awesome 6 Free-Regular-400.otf")
@@ -22,9 +25,10 @@ include_directories(src)
 ###
 ### font compressing tool
 ###
-add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX}
-    COMMAND ${CMAKE_CXX_COMPILER} ${CMAKE_CXX_FLAGS} -o ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX} ${CMAKE_SOURCE_DIR}/external/imgui/misc/fonts/binary_to_compressed_c.cpp
-    DEPENDS ${CMAKE_SOURCE_DIR}/external/imgui/misc/fonts/binary_to_compressed_c.cpp
+add_executable(binary_to_compressed_c EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/external/imgui/misc/fonts/binary_to_compressed_c.cpp)
+set_target_properties(binary_to_compressed_c
+    PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
 
 ###
@@ -37,7 +41,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX} -nostatic -u8 "${CMAKE_SOURCE_DIR}/${FA_REGULAR}" FARegular >> ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX} -nostatic -u8 "${CMAKE_SOURCE_DIR}/${FA_SOLID}" FASolid >> ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp
     VERBATIM
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX} "${UI_FONT}" "${UI_FONT_MONO}" "${FA_REGULAR}" "${FA_SOLID}"
+    DEPENDS binary_to_compressed_c "${UI_FONT}" "${UI_FONT_MONO}" "${FA_REGULAR}" "${FA_SOLID}"
 )
 
 ###
@@ -61,8 +65,6 @@ if (HAVE_OPUS)
   target_include_directories(imvpm PRIVATE external/libogg/include external/opus/include external/opusfile/include)
   target_link_libraries(imvpm ${CMAKE_SOURCE_DIR}/external/libogg/build/ogg.lib ${CMAKE_SOURCE_DIR}/external/opus/build/opus.lib ${CMAKE_SOURCE_DIR}/external/opusfile/build/opusfile.lib)
 endif()
-set_property(TARGET imvpm APPEND
-    PROPERTY ADDITIONAL_CLEAN_FILES ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX})
 
 if (WIN32)
   if(CMAKE_BUILD_TYPE STREQUAL "Debug")
