@@ -246,7 +246,7 @@ public:
     };
 
     struct privateContext {
-        privateContext();
+        privateContext(logger::Logger*);
         ~privateContext();
 
         State state;
@@ -282,17 +282,17 @@ public:
         void *notificationCbUserData;
         unsigned notificationCbMask;
 
-        logger::Logger log;
+        logger::Logger *log;
 
         std::timed_mutex mutex;
         std::condition_variable_any cond;
     };
 
 public:
-    AudioHandler(uint32_t _sampleRateHz = 44100, uint32_t _channels = 2, Format _sampleFormat = FormatF32, Format _recordFormat = FormatF32);
+    AudioHandler(logger::Logger *logptr = nullptr, uint32_t _sampleRateHz = 44100, uint32_t _channels = 2, Format _sampleFormat = FormatF32, Format _recordFormat = FormatF32);
     // _frameDataCbInterval is the preferred interval, in frames, frame data callback would be called,
     // it is not guaranteed that this value would have effect, as it depends on OS audio subsystem
-    AudioHandler(uint32_t _sampleRateHz, uint32_t _channels, Format _sampleFormat, Format _recordFormat, uint32_t _frameDataCbInterval);
+    AudioHandler(logger::Logger *logptr, uint32_t _sampleRateHz, uint32_t _channels, Format _sampleFormat, Format _recordFormat, uint32_t _frameDataCbInterval);
     ~AudioHandler();
 
     // callbacks
@@ -401,10 +401,6 @@ public:
     // framesToTime: convert position in PCM frames to time string
     static std::string framesToTime(uint64_t frames, uint32_t sampleRateHz);
     std::string framesToTime(uint64_t frames) { return framesToTime(frames, sampleRateHz); }
-
-    // access
-    // log: get internal log object
-    logger::Logger &log() { return pc.log; }
 
     const ma_uint32 sampleRateHz;
     const ma_uint32 channels;

@@ -15,6 +15,8 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "AudioHandler.h"
 
+using namespace logger;
+
 #if defined(HAVE_OPUS)
 static ma_result ma_decoding_backend_init__libopus(void* pUserData, ma_read_proc onRead, ma_seek_proc onSeek, ma_tell_proc onTell, void* pReadSeekTellUserData, const ma_decoding_backend_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_data_source** ppBackend)
 {
@@ -135,8 +137,6 @@ static ma_result encoder_init_file(const char* pFilePath, const ma_encoder_confi
 #define encoder_init_file ma_encoder_init_file
 #endif // !defined(MA_WIN32)
 
-using namespace logger;
-
 static void ah_log_callback(void* pUserData, ma_uint32 level, const char* pMessage)
 {
     Logger *pLog = reinterpret_cast<Logger*>(pUserData);
@@ -167,7 +167,8 @@ static ma_bool32 ah_device_enum_callback(ma_context* pContext, ma_device_type de
     }
     devices->list.push_back(AudioHandler::Devices::Device({pInfo->name, pInfo->id}));
 
-    ppc->log.LogMsg(LOG_DBG, " %s: %s%s", deviceType == ma_device_type_capture ? "Capture" : "Playback", pInfo->name, pInfo->isDefault ? " [default]" : "" );
+    if (ppc->log) ppc->log->LogMsg(LOG_DBG, " %s: %s%s", deviceType == ma_device_type_capture ? "Capture" : "Playback",
+            pInfo->name, pInfo->isDefault ? " [default]" : "" );
 
     return MA_TRUE;
 }
@@ -181,8 +182,8 @@ static void ah_device_callback(const ma_device_notification* pNotification)
     std::unique_lock<std::timed_mutex> lock(ppc->mutex, std::chrono::milliseconds(10));
     if (pNotification->type == ma_device_notification_type_stopped && ppc->state.isActive()) {
         // device externally stopped, sync the state
-        ppc->log.LogMsg(LOG_WARN, "%s device stopped",
-            pNotification->pDevice->type == ma_device_type_playback ? "Playback" : "Capture");
+        if (ppc->log) ppc->log->LogMsg(LOG_WARN, "%s device stopped",
+                pNotification->pDevice->type == ma_device_type_playback ? "Playback" : "Capture");
         ppc->cmdQueue.internalCommand(AudioHandler::CmdStop);
     }
 }
@@ -203,11 +204,11 @@ static void ah_play_callback(ma_device *pDevice, void *pOutput, const void *pInp
             if (result == MA_AT_END) {
                 ppc->state |= AudioHandler::StateEOF;
                 ppc->cmdQueue.internalCommand(ppc->playbackEOFcmd);
-                ppc->log.LogMsg(LOG_INFO, "End of file");
+                if (ppc->log) ppc->log->LogMsg(LOG_DBG, "End of file");
             } else {
                 ppc->backendError = result;
                 ppc->cmdQueue.internalCommand(AudioHandler::CmdStop);
-                ppc->log.LogMsg(LOG_ERR, "Error reading file: %s\n", ma_result_description(result));
+                if (ppc->log) ppc->log->LogMsg(LOG_ERR, "Error reading file: %s\n", ma_result_description(result));
             }
             return;
         }
@@ -248,7 +249,7 @@ static void ah_capture_callback(ma_device *pDevice, void *pOutput, const void *p
             if (result != MA_SUCCESS) {
                 ppc->backendError = result;
                 ppc->cmdQueue.internalCommand(AudioHandler::CmdStop);
-                ppc->log.LogMsg(LOG_ERR, "Error writing file: %s\n", ma_result_description(result));
+                if (ppc->log) ppc->log->LogMsg(LOG_ERR, "Error writing file: %s\n", ma_result_description(result));
                 return;
             }
         }
@@ -256,7 +257,7 @@ static void ah_capture_callback(ma_device *pDevice, void *pOutput, const void *p
     (void)pOutput;
 }
 
-AudioHandler::privateContext::privateContext() :
+AudioHandler::privateContext::privateContext(Logger *logptr) :
             state(StateExit),
             backendError(MA_SUCCESS),
             updatePlaybackFileName(false),
@@ -271,18 +272,19 @@ AudioHandler::privateContext::privateContext() :
             frameDataCbUserData(nullptr),
             notificationCbProc(nullptr),
             notificationCbUserData(nullptr),
-            notificationCbMask(0)
+            notificationCbMask(0),
+            log(logptr)
 {
     ma_result result;
     if (!context
         || (result = ma_context_init(NULL, 0, NULL, context.get())) != MA_SUCCESS) {
         backendError = context ? result : MA_OUT_OF_MEMORY;
         context = nullptr;
-        log.LogMsg(LOG_ERR, "Failed to init audio context: %s", ma_result_description(backendError));
+        if (log) log->LogMsg(LOG_ERR, "Failed to init audio context: %s", ma_result_description(backendError));
         return;
     }
 
-    ma_log_register_callback(&context->log, ma_log_callback_init(ah_log_callback, &log));
+    ma_log_register_callback(&context->log, ma_log_callback_init(ah_log_callback, log));
     context->pUserData = this;
 }
 
@@ -290,8 +292,9 @@ AudioHandler::privateContext::~privateContext()
 {
 }
 
-AudioHandler::AudioHandler(uint32_t _sampleRateHz, uint32_t _channels, Format _sampleFormat, Format _recordFormat) :
-                           AudioHandler(_sampleRateHz,
+AudioHandler::AudioHandler(Logger *logptr, uint32_t _sampleRateHz, uint32_t _channels, Format _sampleFormat, Format _recordFormat) :
+                           AudioHandler(logptr,
+                                        _sampleRateHz,
                                         _channels,
                                         _sampleFormat,
                                         _recordFormat,
@@ -302,12 +305,13 @@ AudioHandler::AudioHandler(uint32_t _sampleRateHz, uint32_t _channels, Format _s
 {
 }
 
-AudioHandler::AudioHandler(uint32_t _sampleRateHz, uint32_t _channels, Format _sampleFormat, Format _recordFormat, uint32_t _frameDataCbInterval) :
+AudioHandler::AudioHandler(Logger *logptr, uint32_t _sampleRateHz, uint32_t _channels, Format _sampleFormat, Format _recordFormat, uint32_t _frameDataCbInterval) :
                            sampleRateHz(_sampleRateHz),
                            channels(_channels),
                            sampleFormat((ma_format)_sampleFormat),
                            recordFormat((ma_format)_recordFormat),
-                           frameDataCbInterval(_frameDataCbInterval)
+                           frameDataCbInterval(_frameDataCbInterval),
+                           pc(logptr)
 {
     if (pc.context) {
         std::unique_lock<std::timed_mutex> lock(pc.mutex);
@@ -623,18 +627,18 @@ void AudioHandler::commandProc()
             }
 
             decoderConfig = ma_decoder_config_init(sampleFormat, channels, sampleRateHz);
-#if defined(HAVE_OPUS)
+ #if defined(HAVE_OPUS)
             decoderConfig.pCustomBackendUserData = NULL;  /* In this example our backend objects are contained within a ma_decoder_ex object to avoid a malloc. Our vtables need to know about this. */
             decoderConfig.ppCustomBackendVTables = pCustomBackendVTables;
             decoderConfig.customBackendCount     = sizeof(pCustomBackendVTables) / sizeof(pCustomBackendVTables[0]);
-#endif // defined(HAVE_OPUS)
+ #endif // defined(HAVE_OPUS)
 
             pc.decoder = ma_unique_decoder(new ma_decoder());
             if (!pc.decoder
                 || (result = decoder_init_file(pc.lastFileName.c_str(), &decoderConfig, pc.decoder.get())) != MA_SUCCESS) {
                 pc.backendError = pc.decoder ? result : MA_OUT_OF_MEMORY;
                 pc.decoder = nullptr;
-                pc.log.LogMsg(LOG_ERR, "%s: failed to open file: %s", pc.lastFileName.c_str(),
+                if (pc.log) pc.log->LogMsg(LOG_ERR, "%s: failed to open file: %s", pc.lastFileName.c_str(),
                                                                       ma_result_description(pc.backendError));
                 pc.cmdQueue.set(CmdStop);
                 break;
@@ -645,7 +649,7 @@ void AudioHandler::commandProc()
             pc.state = StatePlayback|StatePause;
             pc.cmdQueue.internalCommand(CmdResume);
 
-            pc.log.LogMsg(LOG_INFO, "Playing file: %s (%s)", pc.lastFileName.c_str(), framesToTime(pc.length).c_str());
+            if (pc.log) pc.log->LogMsg(LOG_DBG, "Playing file: %s (%s)", pc.lastFileName.c_str(), framesToTime(pc.length).c_str());
             if (pc.notificationCbMask & EventPlayFile)
                 pc.notificationCbProc({EventPlayFile, pc.lastFileName.c_str(), 0}, pc.notificationCbUserData);
             break;
@@ -665,7 +669,7 @@ void AudioHandler::commandProc()
                 pc.stateError = ErrorInvalidSequence;
                 break;
             }
-            if (cc.argStr.empty() || cc.argStr == pc.lastFileName) {
+            if (cc.argStr.empty()) {
                 pc.stateError = ErrorInvalidCmdArg;
                 break;
             }
@@ -678,7 +682,7 @@ void AudioHandler::commandProc()
                 || (result = encoder_init_file(pc.lastFileName.c_str(), &encoderConfig, pc.encoder.get())) != MA_SUCCESS) {
                 pc.backendError = pc.encoder ? result : MA_OUT_OF_MEMORY;
                 pc.encoder = nullptr;
-                pc.log.LogMsg(LOG_ERR, "%s: failed to create file: %s", pc.lastFileName.c_str(),
+                if (pc.log) pc.log->LogMsg(LOG_ERR, "%s: failed to create file: %s", pc.lastFileName.c_str(),
                                                                         ma_result_description(pc.backendError));
                 pc.cmdQueue.set(CmdStop);
                 break;
@@ -687,7 +691,7 @@ void AudioHandler::commandProc()
             pc.state = StateRecord|StatePause;
             pc.cmdQueue.internalCommand(CmdResume);
 
-            pc.log.LogMsg(LOG_INFO, "Recording to file: %s", pc.lastFileName.c_str());
+            if (pc.log) pc.log->LogMsg(LOG_DBG, "Recording to file: %s", pc.lastFileName.c_str());
             if (pc.notificationCbMask & EventRecordFile)
                 pc.notificationCbProc({EventRecordFile, pc.lastFileName.c_str(), 0}, pc.notificationCbUserData);
             break;
@@ -705,14 +709,14 @@ void AudioHandler::commandProc()
             result = ma_decoder_seek_to_pcm_frame(pc.decoder.get(), cc.argU64);
             if (result != MA_SUCCESS) {
                 pc.backendError = result;
-                pc.log.LogMsg(LOG_ERR, "%s: failed seek to %llu: %s",
+                if (pc.log) pc.log->LogMsg(LOG_ERR, "%s: failed seek to %llu: %s",
                     pc.lastFileName.c_str(), cc.argU64, ma_result_description(result));
                 pc.cmdQueue.set(CmdStop);
                 break;
             }
             pc.state &= ~(StateSeek|StateEOF);
 
-            pc.log.LogMsg(LOG_INFO, "%s: seek to %llu", pc.lastFileName.c_str(), cc.argU64);
+            if (pc.log) pc.log->LogMsg(LOG_DBG, "%s: seek to %llu", pc.lastFileName.c_str(), cc.argU64);
             if (pc.notificationCbMask & EventSeek)
                 pc.notificationCbProc({EventSeek, pc.lastFileName.c_str(), cc.argU64}, pc.notificationCbUserData);
             break;
@@ -726,7 +730,7 @@ void AudioHandler::commandProc()
                 result = ma_device_stop(pc.device.get());
                 if (result != MA_SUCCESS) {
                     pc.backendError = result;
-                    pc.log.LogMsg(LOG_ERR, "Failed to stop %s device: %s",
+                    if (pc.log) pc.log->LogMsg(LOG_ERR, "Failed to stop %s device: %s",
                         pc.device->type == ma_device_type_playback ? "playback" : "capture",
                         ma_result_description(result));
                     pc.cmdQueue.set(CmdStop);
@@ -750,7 +754,7 @@ void AudioHandler::commandProc()
 
                 if (pc.state.isPlaying()) {
                     if (!pc.decoder) { // invalid state
-                        pc.log.LogMsg(LOG_DBG, "Invalid playback state");
+                        if (pc.log) pc.log->LogMsg(LOG_DBG, "Invalid playback state");
                         pc.cmdQueue.set(CmdStop);
                         break;
                     }
@@ -809,7 +813,7 @@ void AudioHandler::commandProc()
                     || (result = ma_device_init(pc.context.get(), &deviceConfig, pc.device.get())) != MA_SUCCESS) {
                     pc.backendError = pc.device ? result : MA_OUT_OF_MEMORY;
                     pc.device = nullptr;
-                    pc.log.LogMsg(LOG_ERR, "Failed to open%s device: %s", pc.device ? (pc.device->type == ma_device_type_playback ? " playback" : " capture") : "",
+                    if (pc.log) pc.log->LogMsg(LOG_ERR, "Failed to open%s device: %s", pc.device ? (pc.device->type == ma_device_type_playback ? " playback" : " capture") : "",
                         ma_result_description(pc.backendError));
                     pc.cmdQueue.set(CmdStop);
                     break;
@@ -817,7 +821,7 @@ void AudioHandler::commandProc()
                 if (pc.device->type == ma_device_type_playback)
                     ma_atomic_float_set(&pc.device->masterVolumeFactor, pc.playbackVolumeFactor);
 
-                pc.log.LogMsg(LOG_INFO, "Opened %s device: %s",
+                if (pc.log) pc.log->LogMsg(LOG_DBG, "Opened %s device: %s",
                     pc.device->type == ma_device_type_playback ? "playback" : "capture",
                     devices->selectedName.c_str());
             }
@@ -826,7 +830,7 @@ void AudioHandler::commandProc()
                 result = ma_device_start(pc.device.get());
                 if (result != MA_SUCCESS) {
                     pc.backendError = result;
-                    pc.log.LogMsg(LOG_ERR, "Failed to start %s device: %s",
+                    if (pc.log) pc.log->LogMsg(LOG_ERR, "Failed to start %s device: %s",
                         pc.device->type == ma_device_type_playback ? "playback" : "capture",
                         ma_result_description(result));
                     pc.cmdQueue.set(CmdStop);
@@ -849,7 +853,7 @@ void AudioHandler::commandProc()
                 pc.stateError = ErrorInvalidSequence;
             break;
         case CmdEnumerateDevices:
-            pc.log.LogMsg(LOG_INFO, "Enumerating devices...");
+            if (pc.log) pc.log->LogMsg(LOG_DBG, "Enumerating devices...");
             {
                 std::lock_guard<std::mutex> lock(pc.device_mutex);
                 pc.playbackDevices.list.clear();
@@ -861,7 +865,7 @@ void AudioHandler::commandProc()
             }
             if (result != MA_SUCCESS) {
                 pc.backendError = result;
-                pc.log.LogMsg(LOG_ERR, "Failed to enumerate devices: %s", ma_result_description(result));
+                if (pc.log) pc.log->LogMsg(LOG_ERR, "Failed to enumerate devices: %s", ma_result_description(result));
             }
             break;
         case CmdSwitchPlaybackDevice:
@@ -935,7 +939,7 @@ void AudioHandler::commandProc()
             pc.state &= ~StateReady;
             break;
         default:
-            pc.log.LogMsg(LOG_DBG, "Invalid command %u", cc.cmd);
+            if (pc.log) pc.log->LogMsg(LOG_DBG, "Invalid command %u", cc.cmd);
             break;
         }
         if (!pc.state.isReady())

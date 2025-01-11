@@ -19,7 +19,8 @@ enum LOG_LVL {
     LOG_ERR = 0,
     LOG_WARN,
     LOG_INFO,
-    LOG_DBG
+    LOG_DBG,
+    LOG_MAXLVL = LOG_DBG
 };
 
 class Logger {

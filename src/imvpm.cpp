@@ -85,6 +85,9 @@ Index of this file:
 #if !defined(_MSC_VER) || _MSC_VER >= 1800
 #include <inttypes.h>       // PRId64/PRIu64, not avail in some MinGW headers.
 #endif
+#include <sys/stat.h>
+
+using namespace logger;
 
 // Visual Studio warnings
 #ifdef _MSC_VER
@@ -218,13 +221,13 @@ constexpr const ImU32 palette[] = {
     IM_COL32(255, 165,   0, 255),  // ORANGE
     IM_COL32(128, 128, 128, 255),  // LIGHT GRAY
     IM_COL32( 64,  64,  64, 255),  // GRAY
-    IM_COL32( 32,  32,  32, 255),  // DARK GRAY
+    IM_COL32( 32,  32,  32, 255)   // DARK GRAY
 };
 const char *palette_names[] = {
        "RED",        "PINK", "PURPLE",    "INDIGO",
       "BLUE",  "LIGHT BLUE",   "CYAN",      "TEAL",
      "GREEN", "LIGHT GREEN",   "LIME",    "YELLOW",
-    "ORANGE",  "LIGHT GRAY",   "GRAY", "DARK GRAY",
+    "ORANGE",  "LIGHT GRAY",   "GRAY", "DARK GRAY"
 };
 enum {
     ColorRed = 0,
@@ -354,7 +357,8 @@ static bool       but_tempo = ButtonTempoDef;                                   
 static bool     but_devices = ButtonDevsDef;
 static float    play_volume = 1.0f;
 static bool            mute = false;
-static std::string scale_str; 
+static std::string scale_str;
+static std::string record_dir;
 
 static ImU32 plot_colors[] = {  // Plot palete, fixed order up to and including pitch
     palette[ColorDarkGray],       //   Semitone
@@ -424,7 +428,8 @@ static ImU32 UI_colors[] = {
     IM_COL32(200,   0,  40, 255),
     IM_COL32(255,   0,  50, 255),
     IM_COL32(255,  60,  60, 255),
-    IM_COL32(255, 255,  70, 255)
+    IM_COL32(255, 255,  70, 255),
+    IM_COL32(100, 100, 100, 255)
 };
 enum {
     UIIdxDefault = 0,
@@ -436,6 +441,7 @@ enum {
     UIIdxRecord,
     UIIdxMsgErr,
     UIIdxMsgWarn,
+    UIIdxMsgDbg,
     UIColorCount       = IM_ARRAYSIZE(UI_colors)
 };
 
@@ -474,7 +480,8 @@ static unique_open_file open_file_dlg = nullptr; // open file dialog operation
 
 static Analyzer analyzer;
 static std::mutex analyzer_mtx;
-static AudioHandler audiohandler(44100 /* Fsample */, 2 /* channels */, AudioHandler::FormatF32 /* sample format */, AudioHandler::FormatS16 /* record format */, 1470 /* cb interval */);
+static Logger msg_log;
+static AudioHandler audiohandler(&msg_log, 44100 /* Fsample */, 2 /* channels */, AudioHandler::FormatF32 /* sample format */, AudioHandler::FormatS16 /* record format */, 1470 /* cb interval */);
 static AudioHandler::State ah_state;      // frame-locked handler state
 static uint64_t ah_len = 0, ah_pos = 0;   // handler length and position, applicable only to playback and record
 
@@ -519,7 +526,7 @@ enum {
     TextAlignRight = -2,
     TextAlignBottom = -2,
     TextAlignMiddle = -1,
-    TextAlignTop = 0,
+    TextAlignTop = 0
 };
 static void AddTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawList* draw_list, const char *str);
 static void AddFmtTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawList* draw_list, const char *fmt, ...);
@@ -606,7 +613,52 @@ void AddFmtTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawLis
     draw_list->AddText(at, color, str);
 }
 
-void togglePause()
+// audio control wrappers
+void Stop()
+{
+    /*if (ah_state.isRecording())
+        msg_log.LogMsg("file recored");*/
+    audiohandler.stop();
+    audiohandler.capture();
+}
+
+void Play(const char *file = nullptr)
+{
+    audiohandler.stop();
+    audiohandler.play(file);
+}
+
+void Record()
+{
+    if (ah_state.isRecording()) {
+        Stop();
+        return;
+    }
+
+    std::time_t time = std::time({});
+    std::string filename = record_dir + pfd::path::separator();
+    char timeString[64];
+    std::strftime(std::data(timeString), std::size(timeString), "%Y%m%d_%H%M%S", std::gmtime(&time));
+    filename += timeString;
+    filename += ".wav";
+
+    audiohandler.stop();
+    audiohandler.record(filename.c_str());
+}
+
+void Pause()
+{
+    if (ah_state.canPause())
+        audiohandler.pause();
+}
+
+void Resume()
+{
+    if (ah_state.canResume())
+        audiohandler.resume();
+}
+
+void TogglePause()
 {
     if (!ah_state.isPlaying())
         return;
@@ -617,13 +669,13 @@ void togglePause()
         audiohandler.resume();
 }
 
-void toggleMute()
+void ToggleMute()
 {
     mute = !mute;
     audiohandler.setPlaybackVolumeFactor(mute ? 0 : play_volume);
 }
 
-void toggleFullscreen()
+void ToggleFullscreen()
 {
     if (ImGui::SysIsMaximized())
         ImGui::SysRestore();
@@ -635,13 +687,13 @@ void OpenAudioFile()
 {
     open_file_dlg = unique_open_file(new pfd::open_file("Open file for playback", pfd::path::home(),
                             { "Audio files (.wav .mp3 .ogg .flac"
-#if defined(HAVE_OPUS)
+ #if defined(HAVE_OPUS)
                             " .opus"
-#endif
+ #endif
                             ")", "*.wav *.mp3 *.ogg *.flac"
-#if defined(HAVE_OPUS)
+ #if defined(HAVE_OPUS)
                             " *.opus"
-#endif
+ #endif
                             , "All Files", "*" }));
 }
 
@@ -746,16 +798,17 @@ void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData,
 
 int ImGui::AppInit(int argc, char const *const* argv)
 {
+    msg_log.SetLevel(LOG_INFO);
+
     LoadSettings();
 
     audiohandler.attachFrameDataCb(sampleCb, nullptr);
     audiohandler.setPlaybackEOFaction(AudioHandler::CmdCapture);
     audiohandler.setUpdatePlaybackFileName(true);
-    audiohandler.log().SetLevel(logger::LOG_WARN);
     audiohandler.enumerate();
 
     if (!pfd::settings::available())
-        audiohandler.log().LogMsg(logger::LOG_WARN, "portable-file-dialogs is unavailable on this platform, file operations ceased");
+        msg_log.LogMsg(LOG_WARN, "portable-file-dialogs is unavailable on this platform, file dialogs ceased");
 
     if (argc > 1)
     {
@@ -909,10 +962,7 @@ void ImGui::AppNewFrame()
     {
         auto files = open_file_dlg->result();
         if (files.size() > 0)
-        {
-            audiohandler.stop();
-            audiohandler.play(files[0].c_str());
-        }
+            Play(files[0].c_str());
         open_file_dlg = nullptr;
     }
 
@@ -1062,11 +1112,13 @@ void CaptureDevices()
 
 void PlaybackDevices()
 {
-    if (ButtonWidget(mute ? ICON_FA_VOLUME_XMARK : ICON_FA_VOLUME_OFF))
+    if (ButtonWidget(mute ? ICON_FA_VOLUME_XMARK : ICON_FA_VOLUME_OFF)) {
+        audiohandler.enumerate();
         ImGui::OpenPopup("##PlaybackDevicesPopup");
+    }
 
     if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right, false))
-        toggleMute();
+        ToggleMute();
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(menu_spacing, menu_spacing));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(menu_spacing, menu_spacing));
@@ -1106,10 +1158,7 @@ void AudioControl()
     if (!can_stop)
         ImGui::BeginDisabled();
     if (ButtonWidget(ICON_FA_CIRCLE_STOP))
-    {
-        audiohandler.stop();
-        audiohandler.capture();
-    }
+        Stop();
     if (!can_stop)
         ImGui::EndDisabled();
 
@@ -1129,17 +1178,14 @@ void AudioControl()
         draw_list->AddCircleFilled(ImGui::GetCursorPos() + widget_sz / 2, widget_sz.x * 0.15f, color);
     }
     if (ButtonWidget(ICON_FA_CIRCLE))
-    {
-        audiohandler.stop();
-        audiohandler.record("f:\\temp\\record.wav");
-    }
+        Record();
 
     // play / pause button
     ImGui::SameLine(0, widget_margin);
     if (ah_state.isPlaying() && ah_state.canPause())
     {
         if (ButtonWidget(ICON_FA_CIRCLE_PAUSE))
-            audiohandler.pause();
+            Pause();
     }
     else
     {
@@ -1149,12 +1195,9 @@ void AudioControl()
         if (ButtonWidget(ICON_FA_CIRCLE_PLAY))
         {
             if (ah_state.canResume())
-                audiohandler.resume();
+                Resume();
             else
-            {
-                audiohandler.stop();
-                audiohandler.play();
-            }
+                Play();
         }
         if (!can_play)
             ImGui::EndDisabled();
@@ -1337,23 +1380,23 @@ inline void InputControl()
         }
 
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-            togglePause();
+            TogglePause();
     }
 
     // Keyboard
     if (ImGui::IsWindowFocused())
     {
         if (ImGui::IsKeyPressed(ImGuiKey_Space, false))
-            togglePause();
+            TogglePause();
 
         if (ImGui::IsKeyPressed(ImGuiKey_A, false))
             autoscroll = !autoscroll;
 
         if (ImGui::IsKeyPressed(ImGuiKey_F, false))
-            toggleFullscreen();
+            ToggleFullscreen();
 
         if (ImGui::IsKeyPressed(ImGuiKey_M, false))
-            toggleMute();
+            ToggleMute();
     }
 }
 
@@ -1590,16 +1633,20 @@ void ProcessLog()
     constexpr size_t maxMsgs = 3;
     constexpr float msgTimeoutSec = 5.0f;
     constexpr float faderate = msgTimeoutSec / 0.3f /* duration, seconds */ / 2 /* fadein + fadeout */;
+    constexpr float alpha_step = maxMsgs <= 1 ? 0.0f : 0.4f / (maxMsgs - 1);
 
     static unsigned long long nextN = maxMsgs;
     static float MsgTimeout[maxMsgs] = {};
 
-    ImVec2 wsize = ImGui::GetWindowSize();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 pos = ImGui::GetWindowSize();
+    pos.x /= 2;
+    pos.y -= widget_sz.y + widget_margin * 1.5f + font_def_sz;
 
+    ImU32 msg_colors[LOG_MAXLVL + 1] = { UI_colors[UIIdxMsgErr], UI_colors[UIIdxMsgWarn], UI_colors[UIIdxDefault], UI_colors[UIIdxMsgDbg] };
+    float alpha = 1.0f;
     size_t timedOut = 0;
-    size_t pos = 0;
-    auto& entries = audiohandler.log().LockEntries();
+    auto& entries = msg_log.LockEntries();
     for ( auto &entry : entries )
     {
         if (entry.N > nextN)
@@ -1617,15 +1664,15 @@ void ProcessLog()
             MsgTimeout[curMsg] = 0.0f;
             continue;
         }
-        float alpha = 1.0f - 0.3f * pos;
-        // fadein/fadeout
-        alpha *= std::fmin(faderate - std::fabs(std::fmod((MsgTimeout[curMsg] - time) * faderate * 2.0f / msgTimeoutSec, faderate * 2.0f) - faderate), 1.0f);
-        ImU32 color = ImGui::GetColorU32(entry.Lvl == logger::LOG_ERR ? UI_colors[UIIdxMsgErr] : UI_colors[UIIdxMsgWarn], alpha);
-        AddTextAligned(ImVec2(wsize.x / 2, wsize.y - font_def_sz * 1.5f * maxMsgs + font_def_sz * 1.5f * pos), TextAlignCenter, TextAlignMiddle,
-                color, draw_list, entry.Msg.get());
-        pos++;
+
+        ImU32 color = ImGui::GetColorU32(msg_colors[entry.Lvl],
+                alpha * std::fmin(faderate - std::fabs(std::fmod((MsgTimeout[curMsg] - time) * faderate * 2.0f / msgTimeoutSec, faderate * 2.0f) - faderate), 1.0f));
+        AddTextAligned(pos, TextAlignCenter, TextAlignMiddle, color, draw_list, entry.Msg.get());
+
+        pos.y -= font_def_sz * 1.5f;
+        alpha -= alpha_step;
     }
-    audiohandler.log().UnlockEntries();
+    msg_log.UnlockEntries();
     nextN += timedOut;
 }
 
@@ -1636,6 +1683,8 @@ void LoadSettings()
     scale_str = scale_list[0];
     UpdateCalibration();
     UpdateScale();
+
+    record_dir = "f:\\temp";
 }
 
 void SaveSettings()
@@ -1897,72 +1946,72 @@ void ImGui::ShowAboutWindow(bool* p_open)
         ImGui::Separator();
         ImGui::Text("sizeof(size_t): %d, sizeof(ImDrawIdx): %d, sizeof(ImDrawVert): %d", (int)sizeof(size_t), (int)sizeof(ImDrawIdx), (int)sizeof(ImDrawVert));
         ImGui::Text("define: __cplusplus=%d", (int)__cplusplus);
-#ifdef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+ #ifdef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
         ImGui::Text("define: IMGUI_DISABLE_OBSOLETE_FUNCTIONS");
-#endif
-#ifdef IMGUI_DISABLE_OBSOLETE_KEYIO
+ #endif
+ #ifdef IMGUI_DISABLE_OBSOLETE_KEYIO
         ImGui::Text("define: IMGUI_DISABLE_OBSOLETE_KEYIO");
-#endif
-#ifdef IMGUI_DISABLE_WIN32_DEFAULT_CLIPBOARD_FUNCTIONS
+ #endif
+ #ifdef IMGUI_DISABLE_WIN32_DEFAULT_CLIPBOARD_FUNCTIONS
         ImGui::Text("define: IMGUI_DISABLE_WIN32_DEFAULT_CLIPBOARD_FUNCTIONS");
-#endif
-#ifdef IMGUI_DISABLE_WIN32_DEFAULT_IME_FUNCTIONS
+ #endif
+ #ifdef IMGUI_DISABLE_WIN32_DEFAULT_IME_FUNCTIONS
         ImGui::Text("define: IMGUI_DISABLE_WIN32_DEFAULT_IME_FUNCTIONS");
-#endif
-#ifdef IMGUI_DISABLE_WIN32_FUNCTIONS
+ #endif
+ #ifdef IMGUI_DISABLE_WIN32_FUNCTIONS
         ImGui::Text("define: IMGUI_DISABLE_WIN32_FUNCTIONS");
-#endif
-#ifdef IMGUI_DISABLE_DEFAULT_FORMAT_FUNCTIONS
+ #endif
+ #ifdef IMGUI_DISABLE_DEFAULT_FORMAT_FUNCTIONS
         ImGui::Text("define: IMGUI_DISABLE_DEFAULT_FORMAT_FUNCTIONS");
-#endif
-#ifdef IMGUI_DISABLE_DEFAULT_MATH_FUNCTIONS
+ #endif
+ #ifdef IMGUI_DISABLE_DEFAULT_MATH_FUNCTIONS
         ImGui::Text("define: IMGUI_DISABLE_DEFAULT_MATH_FUNCTIONS");
-#endif
-#ifdef IMGUI_DISABLE_DEFAULT_FILE_FUNCTIONS
+ #endif
+ #ifdef IMGUI_DISABLE_DEFAULT_FILE_FUNCTIONS
         ImGui::Text("define: IMGUI_DISABLE_DEFAULT_FILE_FUNCTIONS");
-#endif
-#ifdef IMGUI_DISABLE_FILE_FUNCTIONS
+ #endif
+ #ifdef IMGUI_DISABLE_FILE_FUNCTIONS
         ImGui::Text("define: IMGUI_DISABLE_FILE_FUNCTIONS");
-#endif
-#ifdef IMGUI_DISABLE_DEFAULT_ALLOCATORS
+ #endif
+ #ifdef IMGUI_DISABLE_DEFAULT_ALLOCATORS
         ImGui::Text("define: IMGUI_DISABLE_DEFAULT_ALLOCATORS");
-#endif
-#ifdef IMGUI_USE_BGRA_PACKED_COLOR
+ #endif
+ #ifdef IMGUI_USE_BGRA_PACKED_COLOR
         ImGui::Text("define: IMGUI_USE_BGRA_PACKED_COLOR");
-#endif
-#ifdef _WIN32
+ #endif
+ #ifdef _WIN32
         ImGui::Text("define: _WIN32");
-#endif
-#ifdef _WIN64
+ #endif
+ #ifdef _WIN64
         ImGui::Text("define: _WIN64");
-#endif
-#ifdef __linux__
+ #endif
+ #ifdef __linux__
         ImGui::Text("define: __linux__");
-#endif
-#ifdef __APPLE__
+ #endif
+ #ifdef __APPLE__
         ImGui::Text("define: __APPLE__");
-#endif
-#ifdef _MSC_VER
+ #endif
+ #ifdef _MSC_VER
         ImGui::Text("define: _MSC_VER=%d", _MSC_VER);
-#endif
-#ifdef _MSVC_LANG
+ #endif
+ #ifdef _MSVC_LANG
         ImGui::Text("define: _MSVC_LANG=%d", (int)_MSVC_LANG);
-#endif
-#ifdef __MINGW32__
+ #endif
+ #ifdef __MINGW32__
         ImGui::Text("define: __MINGW32__");
-#endif
-#ifdef __MINGW64__
+ #endif
+ #ifdef __MINGW64__
         ImGui::Text("define: __MINGW64__");
-#endif
-#ifdef __GNUC__
+ #endif
+ #ifdef __GNUC__
         ImGui::Text("define: __GNUC__=%d", (int)__GNUC__);
-#endif
-#ifdef __clang_version__
+ #endif
+ #ifdef __clang_version__
         ImGui::Text("define: __clang_version__=%s", __clang_version__);
-#endif
-#ifdef __EMSCRIPTEN__
+ #endif
+ #ifdef __EMSCRIPTEN__
         ImGui::Text("define: __EMSCRIPTEN__");
-#endif
+ #endif
         ImGui::Separator();
         ImGui::Text("io.BackendPlatformName: %s", io.BackendPlatformName ? io.BackendPlatformName : "NULL");
         ImGui::Text("io.BackendRendererName: %s", io.BackendRendererName ? io.BackendRendererName : "NULL");
