@@ -97,7 +97,8 @@ public:
     enum NotificationEventOp {
         EventOpNone,
         EventOpPlayback,
-        EventOpCaptureRecord
+        EventOpCapture,
+        EventOpRecord
     };
     struct Notification {
         NotificationEvent event;

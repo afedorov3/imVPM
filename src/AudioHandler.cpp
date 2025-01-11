@@ -741,7 +741,7 @@ void AudioHandler::commandProc()
 
             if (pc.notificationCbMask & EventPause)
                 pc.notificationCbProc({EventPause, lastDeviceName->c_str(),
-                    (uint64_t)(pc.device ? (pc.device->type == ma_device_type_playback ? EventOpPlayback : EventOpCaptureRecord) : EventOpNone)},
+                    (uint64_t)(pc.device ? (pc.device->type == ma_device_type_playback ? EventOpPlayback : (pc.encoder ? EventOpRecord : EventOpCapture)) : EventOpNone)},
                     pc.notificationCbUserData);
             break;
         case CmdResume:
@@ -842,7 +842,7 @@ void AudioHandler::commandProc()
 
             if (pc.notificationCbMask & EventResume)
                 pc.notificationCbProc({EventResume, lastDeviceName->c_str(),
-                (uint64_t)(pc.device ? (pc.device->type == ma_device_type_playback ? EventOpPlayback : EventOpCaptureRecord) : EventOpNone)},
+                (uint64_t)(pc.device ? (pc.device->type == ma_device_type_playback ? EventOpPlayback : (pc.encoder ? EventOpRecord : EventOpCapture)) : EventOpNone)},
                 pc.notificationCbUserData);
             break;
         case CmdTogglePause:
@@ -920,7 +920,7 @@ void AudioHandler::commandProc()
             break;
         case CmdStop:
         {
-            NotificationEventOp op = pc.device ? (pc.device->type == ma_device_type_playback ? EventOpPlayback : EventOpCaptureRecord) : EventOpNone;
+            NotificationEventOp op = pc.device ? (pc.device->type == ma_device_type_playback ? EventOpPlayback : (pc.encoder ? EventOpRecord : EventOpCapture)) : EventOpNone;
             if (pc.encoder && pc.updatePlaybackFileName && !pc.genericError) {
                 pc.playbackFileName = pc.lastFileName;
                 pc.state.hasPlaybackFile = true;

@@ -357,9 +357,9 @@ static bool       metronome = MetronomeDef;
 static int        tempo_val = TempoValueDef;
 static bool      tempo_grid = TempoGridDef;
 static int      tempo_meter = TempoMeterDef;
-static bool        but_hold = ButtonHoldDef;                                                      //  N/I
+static bool        but_hold = ButtonHoldDef;
 static bool       but_scale = ButtonScaleDef;
-static bool       but_tempo = ButtonTempoDef;                                                     //  N/I
+static bool       but_tempo = ButtonTempoDef;
 static bool     but_devices = ButtonDevsDef;
 static float    play_volume = 1.0f;
 static bool            mute = false;
@@ -477,10 +477,12 @@ static float  widget_padding;             // UI widget padding
 static float    menu_spacing;             // UI menu spacing
 static ImVec2       tempo_sz;             // UI tempo widget size
 static float   scale_sel_wdt;             // UI scale selector width
+static ImVec2    hold_btn_sz;             // UI hold button size
 static float    progress_hgt;             // UI playback progress height
 static bool   progress_hover =    false;  // UI playback progress is hovered
 static std::vector<double> f_peak_buf;    // peak frequency averaging buffer
 static size_t f_peak_buf_pos =        0;  // peak frequency averaging buffer position
+static std::string last_record_file;      // path to last recorded file
 
 typedef std::unique_ptr<pfd::open_file> unique_open_file;
 static unique_open_file open_file_dlg = nullptr; // open file dialog operation
@@ -514,6 +516,7 @@ static void PlaybackDevices();            // playback device selection and volum
 static void AudioControl();               // AudioHandler control widget
 static void TempoControl();               // tempo control widget
 static void ScaleSelector(bool from_settings = false); // scale selection widget
+static void HoldButton();                 // HOLD button
 static void PlaybackProgress();           // playback progress bar
 static bool ColorPicker(const char *label, ImU32 &color, float split = 0.0f); // color picker with palette
 
@@ -576,9 +579,6 @@ inline bool ends_with(std::string const & value, std::string const & ending)
     return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
 
-// from imgui_internal.h
-template<typename T> static inline T ImClamp(T v, T mn, T mx)                   { return (v < mn) ? mn : (v > mx) ? mx : v; }
-
 void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpidx, int octave, ImU32 color, ImDrawList* draw_list)
 {
     static char label[16];
@@ -621,14 +621,16 @@ void AddFmtTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawLis
 // audio control wrappers
 void Stop()
 {
-    /*if (ah_state.isRecording())
-        msg_log.LogMsg("file recored");*/
     audiohandler.stop();
     audiohandler.capture();
+
+    if (ah_state.isRecording())
+        msg_log.LogMsg(LOG_INFO, "File recorded: %s", last_record_file.c_str());
 }
 
 void Play(const char *file = nullptr)
 {
+    hold = false;
     audiohandler.stop();
     audiohandler.play(file);
 }
@@ -641,14 +643,15 @@ void Record()
     }
 
     std::time_t time = std::time({});
-    std::string filename = record_dir + pfd::path::separator();
+    last_record_file = record_dir + pfd::path::separator();
     char timeString[64];
     std::strftime(std::data(timeString), std::size(timeString), "%Y%m%d_%H%M%S", std::gmtime(&time));
-    filename += timeString;
-    filename += ".wav";
+    last_record_file += timeString;
+    last_record_file += ".wav";
 
+    hold = false;
     audiohandler.stop();
-    audiohandler.record(filename.c_str());
+    audiohandler.record(last_record_file.c_str());
 }
 
 void Pause()
@@ -660,18 +663,29 @@ void Pause()
 void Resume()
 {
     if (ah_state.canResume())
+    {
+        hold = false;
         audiohandler.resume();
+    }
+}
+
+void ToggleHold()
+{
+    hold = !hold;
 }
 
 void TogglePause()
 {
     if (!ah_state.isPlaying())
-        return;
+        return ToggleHold();
 
     if (ah_state.canPause())
         audiohandler.pause();
     else if (ah_state.canResume())
+    {
+        hold = false;
         audiohandler.resume();
+    }
 }
 
 void ToggleMute()
@@ -981,6 +995,7 @@ void ImGui::AppNewFrame()
         ImGui::PushFont(font_def);
         tempo_sz = ImVec2(ImGui::CalcTextSize("888").x + widget_padding * 2, widget_sz.y + widget_padding * 2);
         scale_sel_wdt = ImGui::CalcTextSize(scale_list[IM_ARRAYSIZE(scale_list) - 1]).x + menu_spacing * 4;
+        hold_btn_sz = ImGui::CalcTextSize("HOLD"); hold_btn_sz.x += widget_padding * 2; hold_btn_sz.y += widget_padding * 2;
         ImGui::PopFont();
     }
 
@@ -995,10 +1010,8 @@ void ImGui::AppNewFrame()
 
     audiohandler.getState(ah_state, &ah_len, &ah_pos); // get handler state for a frame
 
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-
-    ImGui::SetNextWindowPos(viewport->Pos);
-    ImGui::SetNextWindowSize(viewport->Size);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->Pos);
+    ImGui::SetNextWindowSize(ImGui::GetMainViewport()->Size);
     // Body of the main window starts here.
     if (ImGui::Begin("imVocalPitchMonitor", nullptr,
         ImGuiWindowFlags_AlwaysAutoResize
@@ -1014,7 +1027,7 @@ void ImGui::AppNewFrame()
 
         // widgets
         //  menu
-        ImVec2 pos = viewport->Pos + viewport->Size;
+        ImVec2 pos = ImGui::GetWindowSize();
         ImVec2 center = pos / 2;
         pos.x -= widget_sz.x + widget_margin + rullbl_sz.x * rul_right;
         pos.y -= widget_sz.y + widget_margin;
@@ -1060,12 +1073,22 @@ void ImGui::AppNewFrame()
             TempoControl();
         }
 
+        pos.y = widget_margin;
+
         // scale selector
         if (but_scale)
         {
-            pos.y = widget_margin;
             ImGui::SetCursorPos(pos);
             ScaleSelector();
+        }
+
+        // HOLD button
+        if (but_hold)
+        {
+            pos.y += (widget_sz.y - hold_btn_sz.y) / 2;
+            pos.x = ImGui::GetWindowSize().x - widget_margin - rullbl_sz.x * rul_right - hold_btn_sz.x;
+            ImGui::SetCursorPos(pos);
+            HoldButton();
         }
 
         // playback progress
@@ -1330,6 +1353,17 @@ void ScaleSelector(bool from_settings)
     }
 }
 
+void HoldButton()
+{
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxDefault], 1.0f - 0.5f * !hold));
+    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
+    if (ImGui::Button("HOLD", hold_btn_sz))
+        ToggleHold();
+    ImGui::PopStyleColor(4);
+}
+
 void PlaybackProgress()
 {
     progress_hgt = widget_margin * (0.4f + progress_hover * 0.5f);
@@ -1360,7 +1394,7 @@ void PlaybackProgress()
     if (hover && progress_hover)
     {
         ImVec2 mouse_pos = ImGui::GetMousePos() - ImGui::GetWindowPos();
-        uint64_t seek_to = ImClamp(uint64_t(mouse_pos.x / size.x * ah_len), uint64_t(0), ah_len);
+        uint64_t seek_to = IM_CLAMP(uint64_t(mouse_pos.x / size.x * ah_len), 0, ah_len);
         ImGui::SetTooltip(audiohandler.framesToTime(seek_to).c_str());
         if (seek && ah_state.canSeek())
             audiohandler.seek(seek_to);
@@ -1517,7 +1551,7 @@ void Draw()
     c_top = c_pos + wsize.y / c2y_mul;
 
     // do autoscrolling
-    if (autoscroll && !ah_state.isIdle() && c_peak >= 0.0) {
+    if (autoscroll && !hold && ah_state.isActive() && c_peak >= 0.0) {
         static int velocity = 0;
 
         if (c_peak < c_pos + (float)PlotAScrlMar)
