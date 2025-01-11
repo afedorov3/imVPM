@@ -169,6 +169,10 @@ using namespace logger;
 #endif
 #endif
 
+#if !defined(PATH_MAX)
+#define PATH_MAX 4096
+#endif // !PATH_MAX
+
 //-----------------------------------------------------------------------------
 // [SECTION] App state
 //-----------------------------------------------------------------------------
@@ -338,6 +342,7 @@ enum {                              // plot: tempo metering scheme
     TempoMeterDef = TempoMeter4_4   // default value
 };
 
+static bool       first_run = true;
 static float      vol_thres = VolThresDef;
 static float         x_zoom = PlotXZoomDef;
 static float         y_zoom = PlotYZoomDef;
@@ -363,8 +368,8 @@ static bool       but_tempo = ButtonTempoDef;
 static bool     but_devices = ButtonDevsDef;
 static float    play_volume = 1.0f;
 static bool            mute = false;
-static std::string scale_str;
-static std::string record_dir;
+static std::string scale_str(scale_list[0]);
+static char record_dir[PATH_MAX] = {};
 
 static ImU32 plot_colors[] = {  // Plot palete, fixed order up to and including pitch
     palette[ColorDarkGray],       //   Semitone
@@ -480,12 +485,15 @@ static float   scale_sel_wdt;             // UI scale selector width
 static ImVec2    hold_btn_sz;             // UI hold button size
 static float    progress_hgt;             // UI playback progress height
 static bool   progress_hover =    false;  // UI playback progress is hovered
-static std::vector<double> f_peak_buf;    // peak frequency averaging buffer
+static std::vector<double> f_peak_buf(TunerSmoothDef, -1.0);    // peak frequency averaging buffer
 static size_t f_peak_buf_pos =        0;  // peak frequency averaging buffer position
+static std::string last_played_file;      // path to last played file
 static std::string last_record_file;      // path to last recorded file
 
 typedef std::unique_ptr<pfd::open_file> unique_open_file;
 static unique_open_file open_file_dlg = nullptr; // open file dialog operation
+typedef std::unique_ptr<pfd::select_folder> unique_select_folder;
+static unique_select_folder select_folder_dlg = nullptr; // select folder dialog operation
 
 static Analyzer analyzer;
 static std::mutex analyzer_mtx;
@@ -642,10 +650,11 @@ void Record()
         return;
     }
 
-    std::time_t time = std::time({});
-    last_record_file = record_dir + pfd::path::separator();
+    last_record_file = record_dir[0] ? record_dir : pfd::path::home();
+    last_record_file += pfd::path::separator();
     char timeString[64];
-    std::strftime(std::data(timeString), std::size(timeString), "%Y%m%d_%H%M%S", std::gmtime(&time));
+    std::time_t time = std::time({});
+    std::strftime(timeString, IM_ARRAYSIZE(timeString), "%Y%m%d_%H%M%S", std::localtime(&time));
     last_record_file += timeString;
     last_record_file += ".wav";
 
@@ -704,7 +713,14 @@ void ToggleFullscreen()
 
 void OpenAudioFile()
 {
-    open_file_dlg = unique_open_file(new pfd::open_file("Open file for playback", pfd::path::home(),
+    std::string path;
+
+    auto sep = last_played_file.rfind(pfd::path::separator());
+    if (sep == std::string::npos)
+        path = pfd::path::home();
+    else
+        path = last_played_file.substr(0, sep);
+    open_file_dlg = unique_open_file(new pfd::open_file("Open file for playback", path,
                             { "Audio files (.wav .mp3 .ogg .flac"
  #if defined(HAVE_OPUS)
                             " .opus"
@@ -714,6 +730,11 @@ void OpenAudioFile()
                             " *.opus"
  #endif
                             , "All Files", "*" }));
+}
+
+void BrowseDirectory()
+{
+    select_folder_dlg = unique_select_folder(new pfd::select_folder("Select record directory", record_dir[0] ? record_dir : pfd::path::home()));
 }
 
 inline void UpdateCalibration()
@@ -741,9 +762,9 @@ void UpdateScale()
         }
     }
 
-    if (scale_str.compare(1, strlen("♯"), "♯") == 0)
+    if (scale_str.compare(1, IM_ARRAYSIZE("♯") - 1, "♯") == 0)
         key++;
-    else if (scale_str.compare(1, strlen("♭"), "♭") == 0)
+    else if (scale_str.compare(1, IM_ARRAYSIZE("♭") - 1, "♭") == 0)
         key--;
 
     scale_key = (key + IM_ARRAYSIZE(lut_note[0])) % IM_ARRAYSIZE(lut_note[0]);
@@ -753,18 +774,23 @@ void UpdateScale()
 
 void LoadSettings()
 {
-    f_peak_buf.resize(TunerSmoothDef, -1.0);
-    f_peak_buf_pos = 0;
-    scale_str = scale_list[0];
+    strcpy_s(record_dir, IM_ARRAYSIZE(record_dir), "f:\\temp");
+
     UpdateCalibration();
     UpdateScale();
 
-    record_dir = "f:\\temp";
+    if (first_run && !record_dir[0])
+    {
+        msg_log.LogMsg(LOG_WARN, "Consider setting the record directory in the settings before start recording.");
+        msg_log.LogMsg(LOG_WARN, "Default path is %s", pfd::path::home().c_str());
+    }
 }
 
 void SaveSettings()
 {
+    first_run = false;
 
+    
 }
 
 bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault])
@@ -1004,8 +1030,18 @@ void ImGui::AppNewFrame()
     {
         auto files = open_file_dlg->result();
         if (files.size() > 0)
+        {
             Play(files[0].c_str());
+            last_played_file = files[0];
+        }
         open_file_dlg = nullptr;
+    }
+    if (select_folder_dlg && select_folder_dlg->ready(0))
+    {
+        auto dir = select_folder_dlg->result();
+        if (!dir.empty())
+            strcpy_s(record_dir, IM_ARRAYSIZE(record_dir), dir.c_str());
+        select_folder_dlg = nullptr;
     }
 
     audiohandler.getState(ah_state, &ah_len, &ah_pos); // get handler state for a frame
@@ -1930,6 +1966,20 @@ void SettingsWindow()
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Scale");
         ImGui::SameLine(); ScaleSelector(true /* from_settings */);
+    }
+
+    // record files directory
+    {
+        ImGui::TextUnformatted("Record directory");
+        ImGui::Indent();
+        ImGui::SetNextItemWidth(0.0f - ImGui::GetFrameHeight() - font_def_sz / 8 * scale);
+        ImGui::InputText("##RecordDir", record_dir, IM_ARRAYSIZE(record_dir), ImGuiInputTextFlags_ElideLeft);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(font_def_sz / 8 * scale, font_def_sz / 8 * scale));
+        ImGui::SameLine();
+        ImGui::PopStyleVar();
+        if (ImGui::Button("...##RecordDirBrowse", ImVec2(ImGui::GetFrameHeight(), 0.0f)))
+            BrowseDirectory();
+        ImGui::Unindent();
     }
 
     // color settings
