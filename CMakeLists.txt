@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.13)
-project(PitchMonitor VERSION "0.0.1" DESCRIPTION "Pitch monitor application" LANGUAGES CXX C)
+project(imVocalPitchMonitor DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
 
 set(HAVE_OPUS "yes")
 set(UI_FONT "external/fonts/DejaVuSans.ttf")
@@ -23,10 +23,9 @@ include_directories(src)
 ### font compressing tool
 ###
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX}
-    COMMAND ${CMAKE_CXX_COMPILER} -O3 -o ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX} ${CMAKE_SOURCE_DIR}/external/imgui/misc/fonts/binary_to_compressed_c.cpp
+    COMMAND ${CMAKE_CXX_COMPILER} ${CMAKE_CXX_FLAGS} -o ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX} ${CMAKE_SOURCE_DIR}/external/imgui/misc/fonts/binary_to_compressed_c.cpp
     DEPENDS ${CMAKE_SOURCE_DIR}/external/imgui/misc/fonts/binary_to_compressed_c.cpp
 )
-add_custom_target(binary_to_compressed_c DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX})
 
 ###
 ### fonts data
@@ -38,13 +37,13 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX} -nostatic -u8 "${CMAKE_SOURCE_DIR}/${FA_REGULAR}" FARegular >> ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX} -nostatic -u8 "${CMAKE_SOURCE_DIR}/${FA_SOLID}" FASolid >> ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp
     VERBATIM
-    DEPENDS binary_to_compressed_c "${UI_FONT}" "${UI_FONT_MONO}" "${FA_REGULAR}" "${FA_SOLID}"
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX} "${UI_FONT}" "${UI_FONT_MONO}" "${FA_REGULAR}" "${FA_SOLID}"
 )
 
 ###
 ### test app
 ###
-if (PM_BUILD_TEST_APP)
+if (BUILD_TEST_APP)
   add_executable(pitchtest src/testapp.cpp external/fft4g.cpp)
   set_target_properties(pitchtest PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
   target_include_directories(pitchtest PRIVATE external)
@@ -58,12 +57,12 @@ add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_D
 set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
 target_include_directories(imvpm PRIVATE src/imgui external external/imgui external/imgui/backends external/fonts external/portable-file-dialogs)
 if (HAVE_OPUS)
-  target_compile_definitions(imvpm PRIVATE  HAVE_OPUS)
-  target_include_directories(imvpm PRIVATE  external/libogg/include external/opus/include external/opusfile/include)
+  target_compile_definitions(imvpm PRIVATE HAVE_OPUS)
+  target_include_directories(imvpm PRIVATE external/libogg/include external/opus/include external/opusfile/include)
   target_link_libraries(imvpm ${CMAKE_SOURCE_DIR}/external/libogg/build/ogg.lib ${CMAKE_SOURCE_DIR}/external/opus/build/opus.lib ${CMAKE_SOURCE_DIR}/external/opusfile/build/opusfile.lib)
 endif()
 set_property(TARGET imvpm APPEND
-    PROPERTY ADDITIONAL_CLEAN_FILES ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp)
+    PROPERTY ADDITIONAL_CLEAN_FILES ${CMAKE_CURRENT_BINARY_DIR}/binary_to_compressed_c${CMAKE_EXECUTABLE_SUFFIX})
 
 if (WIN32)
   if(CMAKE_BUILD_TYPE STREQUAL "Debug")

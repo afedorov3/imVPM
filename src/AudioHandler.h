@@ -212,12 +212,12 @@ public:
         constexpr bool atEOF()       { return   value & StateEOF; }
 
         bool canPlay(bool withFile = false)
-                                     { return  (value & (StateSeek|StateOpMask^StatePlayback)) == StateIdle && (isPlaying() || withFile || hasPlaybackFile); }
+                                     { return  (value & ((StateSeek|StateOpMask)^StatePlayback)) == StateIdle && (isPlaying() || withFile || hasPlaybackFile); }
         constexpr bool canCapture()  { return  (value & StateMask) == StateIdle || (value & StateMask) == StateRecord; }
         constexpr bool canRecord()   { return  (value & (StateOpMask^StateCapture)) == StateIdle
                                             || (value & (StatePause|StateMask)) == (StateRecord|StatePause); }
-        constexpr bool canPause()    { return  (value & (StateSeek|StatePause|StateOpMask^StateCapture)) == StatePlayback; }
-        constexpr bool canResume()   { return  (value & (StateFlagMask|StateOpMask^StateCapture)) == (StatePlayback|StatePause); }
+        constexpr bool canPause()    { return  (value & ((StateSeek|StatePause|StateOpMask)^StateCapture)) == StatePlayback; }
+        constexpr bool canResume()   { return  (value & ((StateFlagMask|StateOpMask)^StateCapture)) == (StatePlayback|StatePause); }
         constexpr bool canSeek()     { return  (value & (StateSeek|StateMask)) == StatePlayback; }
 
         // modifiers

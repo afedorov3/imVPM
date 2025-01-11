@@ -161,7 +161,7 @@ static ma_bool32 ah_device_enum_callback(ma_context* pContext, ma_device_type de
         devices = &ppc->captureDevices;
 
     if (pInfo->isDefault) {
-        devices->defaultIdx = devices->list.size();
+        devices->defaultIdx = (int)devices->list.size();
         if (devices->selectedName.empty())
             devices->selectedName = pInfo->name;
     }
@@ -214,7 +214,7 @@ static void ah_play_callback(ma_device *pDevice, void *pOutput, const void *pInp
         }
 
         if (ppc->frameDataCbProc)
-            ppc->frameDataCbProc((AudioHandler::Format)pDevice->playback.format, pDevice->playback.channels, pOutput, framesRead, ppc->frameDataCbUserData);
+            ppc->frameDataCbProc((AudioHandler::Format)pDevice->playback.format, pDevice->playback.channels, pOutput, (uint32_t)framesRead, ppc->frameDataCbUserData);
     }
 
     (void)pInput;
@@ -573,13 +573,14 @@ bool AudioHandler::getError(int *error, const char **description)
 
 std::string AudioHandler::framesToTime(uint64_t frames, uint32_t sampleRateHz)
 {
-    auto hours   = div(frames / sampleRateHz, 3600);
-    auto minutes = div(hours.rem, 60);
+    auto   hours = frames / sampleRateHz / 3600;
+    auto minutes = frames / sampleRateHz % 3600 / 60;
+    auto seconds = frames / sampleRateHz % 60;
 
     std::stringstream ss;
-    if (hours.quot) ss << hours.quot << ":";
-    ss << minutes.quot << ":";
-    ss << std::setw(2) << std::setfill('0') << minutes.rem;
+    if (hours) ss << hours << ":";
+    ss << minutes << ":";
+    ss << std::setw(2) << std::setfill('0') << seconds;
 
     return ss.str();
 }

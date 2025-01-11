@@ -57,7 +57,7 @@ public:
         peak_freq(-1.0),
         han_window(new double[FFTSIZE]()),
         acf_data(new double[FFTSIZE]()),
-        fft(FFTSIZE),
+        fft((int)FFTSIZE),
         fft_data(new double[FFTSIZE]()),
         pitch_buf(new float[PITCH_BUF_SIZE]()),
         pitch_buf_pos(0),
@@ -68,7 +68,7 @@ public:
             han_window[i] = (0.5 - std::cos(i * M_PI * 2 / FFTSIZE) * 0.5) / sample_fsval;
 
         for(size_t i = 0; i < PITCH_BUF_SIZE; ++i)
-            pitch_buf[i] = -1.0;
+            pitch_buf[i] = -1.0f;
     }
 
     void addData(sample_t sample) {
@@ -111,7 +111,7 @@ public:
 
     static float get_interval_sec()
     {
-        return (float)ANALYZE_INTERVAL / SAMPLE_FREQ;
+        return (float)ANALYZE_INTERVAL / (float)SAMPLE_FREQ;
     }
 
     static double sharp_of(const double freq)
@@ -371,7 +371,7 @@ const double Analyzer::LOG2_FREQ_C1 = std::log2(FREQ_C1);
 
 const double Analyzer::SAMPLE_FREQ = ANALYZER_SAMPLE_FREQ;
 const size_t Analyzer::FFTSIZE = (size_t)std::pow(2.0, (size_t)std::log2((double)(ANALYZER_SAMPLE_FREQ) / (sharp_of(ANALYZER_BASE_FREQ) - (ANALYZER_BASE_FREQ))) + 1);
-const size_t Analyzer::ANALYZE_INTERVAL = (double)(ANALYZER_SAMPLE_FREQ) / (ANALYZER_ANALYZE_FREQ);
+const size_t Analyzer::ANALYZE_INTERVAL = (size_t)((double)(ANALYZER_SAMPLE_FREQ) / (ANALYZER_ANALYZE_FREQ));
 const size_t Analyzer::PITCH_BUF_SIZE = (ANALYZER_ANALYZE_FREQ) * (ANALYZER_ANALYZE_SPAN);
 
 // perf using X5675 PC3‑10600

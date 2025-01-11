@@ -11,19 +11,18 @@
 
 #include "Analyzer.hpp"
 
-// pesky windows stuff
-#undef min
-#undef max
-
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wunused-result"
-#elif defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wunused-result"
 #endif
+
+#define NOMINMAX
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
+
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
 
 const    ma_format sample_format = ma_format_f32;
 typedef                            ma_float       sample_t;
@@ -135,7 +134,7 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
     assert(ctx != nullptr);
 
     if (frameCount > ctx->totalPCMFrameCount - ctx->readCursorInPCMFrames)
-        frameCount = ctx->totalPCMFrameCount - ctx->readCursorInPCMFrames;
+        frameCount = (ma_uint32)(ctx->totalPCMFrameCount - ctx->readCursorInPCMFrames);
 
     if (frameCount > 0)
     {
@@ -226,7 +225,7 @@ int main(int argc, char **argv)
             int64_t at = std::strtol(argv[3], NULL, 0);
             if (at < 0)
                 at = ctx.totalPCMFrameCount + at + 1;
-            if (at < Analyzer::ANALYZE_INTERVAL || at > ctx.totalPCMFrameCount)
+            if (at < Analyzer::ANALYZE_INTERVAL || (uint64_t)at > ctx.totalPCMFrameCount)
             {
                 printf("frame number for this file should be in range %zu <= N <= %" PRIu64 "\n",
                     Analyzer::ANALYZE_INTERVAL, ctx.totalPCMFrameCount);
@@ -264,7 +263,7 @@ int main(int argc, char **argv)
             int64_t at = std::strtol(argv[3], NULL, 0);
             if (at < 0)
                 at = ctx.totalPCMFrameCount + at + 1;
-            if (at < Analyzer::ANALYZE_INTERVAL || at > ctx.totalPCMFrameCount)
+            if (at < Analyzer::ANALYZE_INTERVAL || (uint64_t)at > ctx.totalPCMFrameCount)
             {
                 printf("frame number for this file should be in range %zu <= N <= %" PRIu64 "\n",
                     Analyzer::ANALYZE_INTERVAL, ctx.totalPCMFrameCount);

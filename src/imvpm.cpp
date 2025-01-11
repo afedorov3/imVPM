@@ -48,11 +48,17 @@ Index of this file:
 // [SECTION] Backend callbacks
 //   App Init function           / AppInit()
 //   App Config function         / AppConfig()
-//   App Draw Frame              / AppDrawFrame()
-//   App Destroy                 / AppDestroy()
+//   App Draw Frame function     / AppDrawFrame()
+//   App Destroy function        / AppDestroy()
+//
+// [SECTION] Main window
+//   Widgets
+//   User input handler          / InputControl()
+//   Window Draw function        / Draw()
+//   Message display function    / ProcessLog()
 //
 // [SECTION] Child windows
-//   Toolbar Window              / ShowToolbarWindow()
+//   Settings Window             / SettingsWindow()
 //
 // [SECTION] Standard windows
 //   About Window                / ShowAboutWindow()
@@ -180,7 +186,7 @@ static constexpr float  font_pitch_sz = 36.0f;  // pitch font size, px
 static constexpr float  font_tuner_sz = 16.0f;  // tuner font size, px
 static constexpr float     rul_margin = 4.0f;   // ruler label margin, px
 static constexpr float   top_feat_pos = 42.0f;  // top features vertical position, px: pitch note indicator, tuner, frequency
-static constexpr double        c_dist = 100.0;  // interval width, Cents
+static constexpr float         c_dist = 100.0f; // interval width, Cents
 static constexpr float         dc_max = 400.0f; // plot: max diff between data points, Cents
 
 // LUTs
@@ -263,8 +269,8 @@ static constexpr float VolThresMax =     50.0f;  // Analyzer: volume threshold m
 static constexpr float VolThresMin =      0.0f;  // Analyzer: volume threshold min value
 static constexpr float VolThresDef =      2.0f;  // Analyzer: volume threshold default value [2.0f]
 static constexpr float PitchCalibMax =  450.0f;  // pitch calibration max value, Hz
-static constexpr int   PitchCalibMin =  430.0f;  // pitch calibration min value, Hz
-static constexpr int   PitchCalibDef =  440.0f;  // pitch calibration, Hz, default value [440]
+static constexpr float PitchCalibMin =  430.0f;  // pitch calibration min value, Hz
+static constexpr float PitchCalibDef =  440.0f;  // pitch calibration, Hz, default value [440]
 static constexpr int   PlotRangeMax =     8400;  // plot: absolute upper boundary, Cents,  6000..9500, default 8400
 static constexpr int   PlotRangeMin =        0;  // plot: absolute lower boundary, Cents, -1200..1200, default 0
 static constexpr float PlotPosDef =    2400.0f;  // plot: position, Cents, default value [2400.0f]
@@ -500,7 +506,6 @@ static WndState    wnd_about = wsClosed;  // About popup state
 //-----------------------------------------------------------------------------
 
 // UI routines
-static void ShowToolbarWindow(bool* p_open);
 //  widgets
 static void Menu();                       // menu widget
 static void CaptureDevices();             // capture device selection widget
@@ -515,9 +520,7 @@ static void InputControl();               // handle controls
 static void Draw();                       // main drawing routine
 static void ProcessLog();                 // AudioHandler log messages
 
-// settings
-static void LoadSettings();               // settings load routine
-static void SaveSettings();               // settings save routine
+// child windows
 static void SettingsWindow();             // settings window
 
 enum {
@@ -531,7 +534,7 @@ enum {
 static void AddTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawList* draw_list, const char *str);
 static void AddFmtTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawList* draw_list, const char *fmt, ...);
 
-static void AddNoteLabel(ImVec2 at, int align, int note, int sharpidx, int octave, ImU32 color, ImDrawList* draw_list);
+static void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpidx, int octave, ImU32 color, ImDrawList* draw_list);
 
 //-----------------------------------------------------------------------------
 // [SECTION] Helpers
@@ -713,7 +716,7 @@ void UpdateScale()
     char ch1 = scale_str.at(0);
     const char **names = (const char**)lut_note[0];
     int key = 0;
-    for (size_t n = 0; n < IM_ARRAYSIZE(lut_note[0]); n++)
+    for (int n = 0; n < IM_ARRAYSIZE(lut_note[0]); n++)
     {
         if (ch1 == names[n][0])
         {
@@ -730,6 +733,22 @@ void UpdateScale()
     scale_key = (key + IM_ARRAYSIZE(lut_note[0])) % IM_ARRAYSIZE(lut_note[0]);
     scale_major = ends_with(scale_str, "Major");
     scale_chroma = false;
+}
+
+void LoadSettings()
+{
+    f_peak_buf.resize(TunerSmoothDef, -1.0);
+    f_peak_buf_pos = 0;
+    scale_str = scale_list[0];
+    UpdateCalibration();
+    UpdateScale();
+
+    record_dir = "f:\\temp";
+}
+
+void SaveSettings()
+{
+
 }
 
 bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault])
@@ -784,10 +803,13 @@ inline bool ShowWindow(WndState &state)
 
 void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData, uint32_t frameCount, void *userData)
 {
+    if (hold)
+        return;
+
     std::lock_guard<std::mutex> lock(analyzer_mtx);
     const float *bufptr = (const float*)pData;
-    const uint32_t sampleCount = frameCount * channels;
-    for (uint32_t i = 0; i < sampleCount; i += channels)
+    const uint64_t sampleCount = (uint64_t)frameCount * channels;
+    for (uint64_t i = 0; i < sampleCount; i += channels)
     {
         float sample = bufptr[i];
         for (uint32_t ch = 1; ch < channels; ++ch) // downmix to mono
@@ -1170,7 +1192,7 @@ void AudioControl()
         ImColor color = UI_colors[UIIdxRecord];
         if (ah_state.isRecording())
         {
-            float mul = std::sinf((float)ImGui::GetTime() * M_PI * 2.0f) * 0.2f + 0.8f;
+            float mul = std::sinf((float)ImGui::GetTime() * (float)M_PI * 2.0f) * 0.2f + 0.8f;
             color.Value.x *= mul;
             color.Value.y *= mul;
             color.Value.z *= mul;
@@ -1411,9 +1433,9 @@ void Draw()
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     // adjust plot limits
-    double step = y_zoom * font_grid_sz * scale;
-    double c2y_mul = step / c_dist;
-    double c2y_off = wsize.y + c_pos * c2y_mul;
+    float step = y_zoom * font_grid_sz * scale;
+    float c2y_mul = step / c_dist;
+    float c2y_off = wsize.y + c_pos * c2y_mul;
 
     c_max = (float)PlotRangeMax - (wsize.y - rullbl_sz.y / 2.0f) / c2y_mul;
     if (c_pos > c_max)
@@ -1521,7 +1543,7 @@ void Draw()
 
         // label
         if (semi_lbls || label_idx)
-            AddNoteLabel(ImVec2(x_rullbl, y), align_rullbl, TextAlignMiddle, note, semi_lbls << !!label_idx, octave, plot_colors[line_idx], draw_list);
+            AddNoteLabel(ImVec2(x_rullbl, y), align_rullbl, TextAlignMiddle, note, semi_lbls << (int)!!label_idx, octave, plot_colors[line_idx], draw_list);
     }
     ImGui::PopFont();
 
@@ -1578,7 +1600,7 @@ void Draw()
         // display note
         ImGui::PushFont(font_pitch);
         AddNoteLabel(ImVec2(x_center + x_peak_off, top_feat_pos * scale), TextAlignRight, TextAlignBottom,
-                         note, 1 << !!lut_number[1][note], octave, plot_colors[PlotIdxNote], draw_list);
+                         note, 1 << (int)!!lut_number[1][note], octave, plot_colors[PlotIdxNote], draw_list);
         ImGui::PopFont();
         // draw tuner
         if (show_tuner) {
@@ -1636,7 +1658,7 @@ void ProcessLog()
     constexpr float alpha_step = maxMsgs <= 1 ? 0.0f : 0.4f / (maxMsgs - 1);
 
     static unsigned long long nextN = maxMsgs;
-    static float MsgTimeout[maxMsgs] = {};
+    static double MsgTimeout[maxMsgs] = {};
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     ImVec2 pos = ImGui::GetWindowSize();
@@ -1654,19 +1676,19 @@ void ProcessLog()
         if (entry.N <= nextN - maxMsgs)
             break;
 
-        float time = ImGui::GetTime();
+        double time = ImGui::GetTime();
         size_t curMsg = entry.N % maxMsgs;
-        if (MsgTimeout[curMsg] == 0.0f)
+        if (MsgTimeout[curMsg] == 0.0)
             MsgTimeout[curMsg] = time + msgTimeoutSec;
         else if (time >= MsgTimeout[curMsg])
         {
             timedOut++;
-            MsgTimeout[curMsg] = 0.0f;
+            MsgTimeout[curMsg] = 0.0;
             continue;
         }
 
         ImU32 color = ImGui::GetColorU32(msg_colors[entry.Lvl],
-                alpha * std::fmin(faderate - std::fabs(std::fmod((MsgTimeout[curMsg] - time) * faderate * 2.0f / msgTimeoutSec, faderate * 2.0f) - faderate), 1.0f));
+                alpha * std::fminf(faderate - std::fabsf(std::fmodf((float)(MsgTimeout[curMsg] - time) * faderate * 2.0f / msgTimeoutSec, faderate * 2.0f) - faderate), 1.0f));
         AddTextAligned(pos, TextAlignCenter, TextAlignMiddle, color, draw_list, entry.Msg.get());
 
         pos.y -= font_def_sz * 1.5f;
@@ -1674,22 +1696,6 @@ void ProcessLog()
     }
     msg_log.UnlockEntries();
     nextN += timedOut;
-}
-
-void LoadSettings()
-{
-    f_peak_buf.resize(TunerSmoothDef, -1.0);
-    f_peak_buf_pos = 0;
-    scale_str = scale_list[0];
-    UpdateCalibration();
-    UpdateScale();
-
-    record_dir = "f:\\temp";
-}
-
-void SaveSettings()
-{
-
 }
 
 void SettingsWindow()

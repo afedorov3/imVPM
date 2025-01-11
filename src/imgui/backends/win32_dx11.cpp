@@ -356,13 +356,12 @@ void CALLBACK GuiChangesCoalescingTimer(HWND hWnd, UINT, UINT_PTR id, DWORD)
     g_idGlobalRefreshTimer = 0;
     KillTimer (hWnd, id);
 
-    bool changed = false;
-
+    // ignore if DPI awareness API is available
     if (pfnSetThreadDpiAwarenessContext == nullptr)
-    { // ignore if DPI awareness API is available
+    {
         ImU32 dpi = GetDPI(hWnd);
         if (ImGui::DPI != dpi)
-        {  // OR other local settings that get updated
+        {
             ImGui::DPI = dpi;
             ImGui::AppReconfigure = true;
         }
@@ -410,7 +409,7 @@ static std::unique_ptr<char[]> argv_wchar_to_utf8(int argc, wchar_t const *const
     for (int n = 0; n < argc; ++n)
     {
         ptrs[n] = argsptr;
-        int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wargv[n], -1, argsptr, argsz, NULL, NULL);
+        int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wargv[n], -1, argsptr, (int)argsz, NULL, NULL);
         if (bytes < 1) bytes = 1;
         argsptr[bytes - 1] = '\0'; // just in case
         argsptr += bytes;
@@ -426,7 +425,7 @@ static int ShellExecute2errno(HINSTANCE hcode)
     // https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shellexecutew
     // The return value is cast as an HINSTANCE for backward compatibility with 16-bit Windows applications.
     // It is not a true HINSTANCE, however. It can be cast only to an INT_PTR and compared to either 32 or the following error codes below.
-    INT code = reinterpret_cast<INT_PTR>(hcode);
+    auto code = reinterpret_cast<INT_PTR>(hcode);
     if (code > 32) return 0;
     switch(code)
     {
