@@ -486,7 +486,7 @@ static inline bool starts_with(std::string const &str, std::string const &prefix
 static inline bool is_directory(std::string const &path)
 {
 #if _WIN32
-    auto attr = GetFileAttributesA(path.c_str());
+    auto attr = GetFileAttributesW(str2wstr(path).c_str());
     return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY);
 #elif __EMSCRIPTEN__
     // TODO
@@ -502,11 +502,11 @@ static inline bool is_directory(std::string const &path)
 static inline std::string getenv(std::string const &str)
 {
 #if _MSC_VER
-    char *buf = nullptr;
+    wchar_t *buf = nullptr;
     size_t size = 0;
-    if (_dupenv_s(&buf, &size, str.c_str()) == 0 && buf)
+    if (_wdupenv_s(&buf, &size, str2wstr(str).c_str()) == 0 && buf)
     {
-        std::string ret(buf);
+        std::string ret(wstr2str(buf));
         free(buf);
         return ret;
     }
@@ -644,15 +644,15 @@ inline std::string path::home()
     // Otherwise, try GetUserProfileDirectory()
     HANDLE token = nullptr;
     DWORD len = MAX_PATH;
-    char buf[MAX_PATH] = { '\0' };
+    wchar_t buf[MAX_PATH] = { '\0' };
     if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
     {
         dll userenv("userenv.dll");
-        dll::proc<BOOL WINAPI (HANDLE, LPSTR, LPDWORD)> get_user_profile_directory(userenv, "GetUserProfileDirectoryA");
+        dll::proc<BOOL WINAPI (HANDLE, LPWSTR, LPDWORD)> get_user_profile_directory(userenv, "GetUserProfileDirectoryW");
         get_user_profile_directory(token, buf, &len);
         CloseHandle(token);
         if (*buf)
-            return buf;
+            return internal::wstr2str(buf);
     }
 #elif __EMSCRIPTEN__
     return "/";
@@ -744,14 +744,17 @@ inline void internal::executor::start_func(std::function<std::string(int *)> con
         // Save our thread id so that the caller can cancel us
         m_tid = GetCurrentThreadId();
         EnumWindows(&enum_windows_callback, (LPARAM)this);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_running = true;
+        }
         m_cond.notify_all();
         return fun(&m_exit_code);
     };
 
     std::unique_lock<std::mutex> lock(m_mutex);
     m_future = std::async(std::launch::async, trampoline);
-    m_cond.wait(lock);
-    m_running = true;
+    m_cond.wait(lock, [this]{ return m_running; });
 }
 
 #elif __EMSCRIPTEN__

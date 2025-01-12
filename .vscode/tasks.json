@@ -7,10 +7,10 @@
             "args": [
                 "--build",
                 ".",
-                "-j8"
+                "-j16"
             ],
             "options": {
-                "cwd": "${workspaceFolder}\\build"
+                "cwd": "${command:cmake.buildDirectory}"
             },
             "problemMatcher": [],
             "group": {
@@ -23,11 +23,8 @@
             "label": "debug",
             "type": "shell",
             "command": ".\\imvpm.exe",
-            "args": [
-                "..\\..\\..\\..\\assets\\test-data\\piano.wav"
-            ],
             "options": {
-                "cwd": "${workspaceFolder}\\build"
+                "cwd": "${command:cmake.launchTargetDirectory}"
             },
             "group": {
                 "kind": "test",

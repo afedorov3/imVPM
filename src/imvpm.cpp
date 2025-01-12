@@ -35,6 +35,7 @@
 TODO:
     autoscroll grace on manual scroll
     restart capture if idle
+    portable mode (config alongside executable)
 */
 
 /*
@@ -69,6 +70,7 @@ Index of this file:
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
+#define NOMINMAX
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <IconsFontAwesome6.h>
@@ -76,8 +78,8 @@ Index of this file:
 #include "AudioHandler.h"
 #include "fonts.h"
 
-#define NOMINMAX
 #include <portable-file-dialogs.h>
+#include <SimpleIni.h>
 
 #define IMGUI_APP
 #include "imgui_local.h"
@@ -554,7 +556,7 @@ static void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpi
 // [SECTION] Helpers
 //-----------------------------------------------------------------------------
 
-#ifndef _WIN32
+#if !defined(_WIN32)
 #include <errno.h>
 typedef int errno_t;
 errno_t strcpy_s(char* dst, size_t size, const char* src)
@@ -580,6 +582,25 @@ int sprintf_s(char *dst, size_t dst_sz, const char *fmt, ...)
     return ret;
 }
 #endif // !_WIN32
+
+#if defined(_WIN32)
+std::wstring GetConfigPath()
+{
+    std::string path;
+    path = pfd::internal::getenv("APPDATA");
+
+    if (path.empty())
+        path = pfd::path::home();
+    path += "\\imvpmrc";
+
+    return pfd::internal::str2wstr(path);
+}
+#else
+std::string GetConfigPath()
+{
+    return pfd::path::home() + "/.config/imvpmrc";
+}
+#endif
 
 // by Joseph @ https://stackoverflow.com/questions/874134/find-out-if-string-ends-with-another-string-in-c
 inline bool ends_with(std::string const & value, std::string const & ending)
@@ -780,13 +801,135 @@ void UpdatePeakBuf(int size)
     f_peak_buf_pos = 0;
 }
 
+bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, int &value, int min, int max)
+{
+    const char *pv = ini.GetValue(section, key);
+    if (pv == nullptr)
+        return false;
+
+    char *end;
+    auto llval = strtoll(pv, &end, 0);
+    if (*end != '\0' || (int)llval > max || (int)llval < min)
+        return false;
+
+    value = (int)llval;
+
+    return true;
+}
+
+bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, float &value, float min, float max)
+{
+    const char *pv = ini.GetValue(section, key);
+    if (pv == nullptr)
+        return false;
+
+    char *end;
+    auto fval = strtod(pv, &end);
+    if (*end != '\0' || fval > max || fval < min)
+        return false;
+
+    value = (float)fval;
+
+    return true;
+}
+
+bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, bool &value)
+{
+    constexpr const char *values[] = { "false", "true", "no", "yes", "0", "1" };
+
+    const char *pv = ini.GetValue(section, key);
+    if (pv == nullptr)
+        return false;
+
+    for (size_t i = 0; i < IM_ARRAYSIZE(values); i++)
+        if (strcmp(pv, values[i]) == 0)
+            return value = (bool)(i % 2), true;
+
+    return false;
+}
+
+bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, char *value, size_t value_sz)
+{
+    const char *pv = ini.GetValue(section, key);
+    if (pv == nullptr)
+        return false;
+
+    size_t len = strlen(pv);
+    if (len == 0 || (len + 1) > value_sz)
+        return false;
+
+    strcpy_s(value, value_sz, pv);
+
+    return true;
+}
+
+bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, std::string &value,  const char **values, size_t el_count)
+{
+    const char *pv = ini.GetValue(section, key);
+    if (pv == nullptr)
+        return false;
+
+    for (size_t i = 0; i < el_count; i++)
+        if (strcmp(pv, values[i]) == 0)
+            return value = values[i], true;
+
+    return true;
+}
+
+#define VA_ARGS(...) , ##__VA_ARGS__
+#define GETVAL(sec, var, ...) GetIniValue(ini, sec, #var, var VA_ARGS(__VA_ARGS__))
 void LoadSettings()
 {
-    strcpy_s(record_dir, IM_ARRAYSIZE(record_dir), "f:\\temp");
+    CSimpleIniA ini(true /*Unicode*/);
 
-    UpdatePeakBuf(TunerSmoothDef);
+	SI_Error rc = ini.LoadFile(GetConfigPath().c_str());
+	if (rc == SI_OK) {
+        GETVAL("imvpm", first_run);
+        GETVAL("imvpm", vol_thres, VolThresMin, VolThresMax);
+        GETVAL("imvpm", x_zoom, PlotXZoomMin, PlotXZoomMax);
+        GETVAL("imvpm", y_zoom, PlotYZoomMin, PlotYZoomMax);
+        GETVAL("imvpm", c_pos, PlotRangeMin, PlotRangeMax);
+        GETVAL("imvpm", rul_right);
+        GETVAL("imvpm", semi_lines);
+        GETVAL("imvpm", semi_lbls);
+        GETVAL("imvpm", oct_offset, OctOffsetMin, OctOffsetMax);
+        GETVAL("imvpm", calibration, PitchCalibMin, PitchCalibMax);
+        GETVAL("imvpm", transpose, TransposeMin, TransposeMax);
+        GETVAL("imvpm", autoscroll);
+        GETVAL("imvpm", y_ascr_vel, PlotAScrlVelMin, PlotAScrlVelMax);
+        GETVAL("imvpm", show_freq);
+        GETVAL("imvpm", show_tuner);
+        GETVAL("imvpm", note_names, 0, NoteNamesCount - 1);
+        GETVAL("imvpm", metronome);
+        GETVAL("imvpm", tempo_val, TempoValueMin, TempoValueMax);
+        GETVAL("imvpm", tempo_grid);
+        GETVAL("imvpm", tempo_meter, TempoMeterMin, TempoMeterMax);
+        GETVAL("imvpm", but_hold);
+        GETVAL("imvpm", but_scale);
+        GETVAL("imvpm", but_tempo);
+        GETVAL("imvpm", but_devices);
+        GETVAL("imvpm", play_volume, 0.0f, 1.0f);
+        GETVAL("imvpm", mute);
+        GETVAL("imvpm", scale_str, (const char**)scale_list, IM_ARRAYSIZE(scale_list));
+        GETVAL("imvpm", record_dir, IM_ARRAYSIZE(record_dir));
+        {
+            int size;
+            if (GetIniValue(ini, "imvpm", "f_peak_buf_sz", size, TunerSmoothMin, TunerSmoothMax))
+                UpdatePeakBuf(size);
+        }
+        {
+            char key[64];
+            for (size_t i = 0; i < plot_colors.size(); i++)
+            {
+                sprintf_s(key, IM_ARRAYSIZE(key), "plot_colors_%zu", i);
+                GetIniValue(ini, "imvpm", key, (int&)plot_colors[i], INT_MIN, INT_MAX);
+            }
+        }
+    }
+
     UpdateCalibration();
     UpdateScale();
+    audiohandler.setPlaybackVolumeFactor(mute ? 0 : play_volume);
 
     if (first_run && !record_dir[0])
     {
@@ -795,11 +938,59 @@ void LoadSettings()
     }
 }
 
+#define  SETVAL(sec, var, format) do { sprintf_s(sval, IM_ARRAYSIZE(sval), format, var); ini.SetValue(sec, #var, sval); } while(0)
+#define SETBOOL(sec, var) do { ini.SetValue(sec, #var, (var) ? "true" : "false"); } while(0)
 void SaveSettings()
 {
-    first_run = false;
+    CSimpleIniA ini(true /*Unicode*/);
+    char sval[64];
 
-    
+    first_run = false;
+    SETBOOL("imvpm", first_run);
+    SETVAL ("imvpm", vol_thres, "%0.3f");
+    SETVAL ("imvpm", x_zoom, "%0.3f");
+    SETVAL ("imvpm", y_zoom, "%0.3f");
+    SETVAL ("imvpm", c_pos, "%0.3f");
+    SETBOOL("imvpm", rul_right);
+    SETBOOL("imvpm", semi_lines);
+    SETBOOL("imvpm", semi_lbls);
+    SETVAL ("imvpm", oct_offset, "%d");
+    SETVAL ("imvpm", calibration, "%0.3f");
+    SETVAL ("imvpm", transpose, "%d");
+    SETBOOL("imvpm", autoscroll);
+    SETVAL ("imvpm", y_ascr_vel, "%d");
+    SETBOOL("imvpm", show_freq);
+    SETBOOL("imvpm", show_tuner);
+    SETVAL ("imvpm", note_names, "%d");
+    SETBOOL("imvpm", metronome);
+    SETVAL ("imvpm", tempo_val, "%d");
+    SETBOOL("imvpm", tempo_grid);
+    SETVAL ("imvpm", tempo_meter, "%d");
+    SETBOOL("imvpm", but_hold);
+    SETBOOL("imvpm", but_scale);
+    SETBOOL("imvpm", but_tempo);
+    SETBOOL("imvpm", but_devices);
+    SETVAL ("imvpm", play_volume, "%0.3f");
+    SETBOOL("imvpm", mute);
+    ini.SetValue("imvpm", "scale_str", scale_str.c_str());
+    ini.SetValue("imvpm", "record_dir", record_dir);
+    {
+        size_t f_peak_buf_sz = f_peak_buf.size();
+        SETVAL ("imvpm", f_peak_buf_sz, "%zu");
+    }
+    {
+        char key[64];
+
+        for (size_t i = 0; i < (int)plot_colors.size(); i++)
+        {
+            if (i == PlotIdxReserved) continue;
+            sprintf_s(key, IM_ARRAYSIZE(key), "plot_colors_%zu", i);
+            sprintf_s(sval, IM_ARRAYSIZE(sval), "0x%X", plot_colors[i]);
+            ini.SetValue("imvpm", key, sval);
+        }
+    }
+
+    ini.SaveFile(GetConfigPath().c_str());
 }
 
 void ResetSettings()
@@ -1030,8 +1221,6 @@ bool ImGui::AppConfig()
 
     return true;
 }
-
-namespace ImGui { IMGUI_API void ShowFontAtlas(ImFontAtlas* atlas); }
 
 void ImGui::AppNewFrame()
 {

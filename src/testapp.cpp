@@ -1,3 +1,4 @@
+#define NOMINMAX
 #define _USE_MATH_DEFINES
 #include <iostream>
 #include <fstream>
@@ -16,7 +17,6 @@
 #pragma GCC diagnostic ignored "-Wunused-result"
 #endif
 
-#define NOMINMAX
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 

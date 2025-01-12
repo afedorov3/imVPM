@@ -59,20 +59,29 @@ endif()
 ###
 add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp external/stb_vorbis.c src/imgui/backends/${PM_BACKEND}_${PM_GRAPHICS}.cpp external/fft4g.cpp external/imgui/backends/imgui_impl_${PM_GRAPHICS}.cpp external/imgui/backends/imgui_impl_${PM_BACKEND}.cpp external/imgui/imgui.cpp external/imgui/imgui_widgets.cpp external/imgui/imgui_tables.cpp external/imgui/imgui_draw.cpp)
 set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
-target_include_directories(imvpm PRIVATE src/imgui external external/imgui external/imgui/backends external/fonts external/portable-file-dialogs)
+target_include_directories(imvpm PRIVATE src/imgui external external/imgui external/imgui/backends external/fonts external/portable-file-dialogs external/simpleini)
 if (HAVE_OPUS)
   target_compile_definitions(imvpm PRIVATE HAVE_OPUS)
   target_include_directories(imvpm PRIVATE external/libogg/include external/opus/include external/opusfile/include)
   target_link_libraries(imvpm ${CMAKE_SOURCE_DIR}/external/libogg/build/ogg.lib ${CMAKE_SOURCE_DIR}/external/opus/build/opus.lib ${CMAKE_SOURCE_DIR}/external/opusfile/build/opusfile.lib)
 endif()
 
+
 if (WIN32)
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_options(imvpm PRIVATE "-municode")
+  endif()
+
   if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     # forward debug flag to RC
     set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -D_DEBUG")
   else()
     # set subsystem type while having good old main()
-    target_link_options(imvpm PRIVATE "LINKER:/subsystem:windows,/entry:wmainCRTStartup")
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      target_link_options(imvpm PRIVATE "-Wl,-subsystem,windows")
+    else()
+      target_link_options(imvpm PRIVATE "LINKER:/subsystem:windows,/entry:wmainCRTStartup")
+    endif()
   endif()
 
   # add windows resource file
@@ -82,7 +91,9 @@ endif()
 ###
 ### dependencies
 ###
-if(${PM_BACKEND} STREQUAL "sdl2")
+if(${PM_BACKEND} STREQUAL "win32")
+  target_link_libraries(imvpm Dwmapi)
+elseif(${PM_BACKEND} STREQUAL "sdl2")
   include_directories(/usr/include/SDL2)
   target_link_libraries(imvpm SDL2)
 endif()

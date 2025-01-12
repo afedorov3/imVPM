@@ -316,7 +316,7 @@ AudioHandler::AudioHandler(Logger *logptr, uint32_t _sampleRateHz, uint32_t _cha
     if (pc.context) {
         std::unique_lock<std::timed_mutex> lock(pc.mutex);
         commandThread = std::thread( &AudioHandler::commandProc, this );
-        pc.cond.wait(lock);
+        pc.cond.wait(lock, [this]{ return pc.state.isReady(); });
     }
 }
 
@@ -597,7 +597,7 @@ void AudioHandler::commandProc()
     {
         std::lock_guard<std::timed_mutex> lock(pc.mutex);
         pc.state |= StateReady; // ready for commands
-        pc.cond.notify_one();
+        pc.cond.notify_all();
     }
     do {
         Cmd cc = pc.cmdQueue.pendingCommand();
