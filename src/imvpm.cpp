@@ -233,7 +233,7 @@ constexpr const ImU32 palette[] = {
     IM_COL32( 64,  64,  64, 255),  // GRAY
     IM_COL32( 32,  32,  32, 255)   // DARK GRAY
 };
-const char *palette_names[] = {
+constexpr const char *palette_names[] = {
        "RED",        "PINK", "PURPLE",    "INDIGO",
       "BLUE",  "LIGHT BLUE",   "CYAN",      "TEAL",
      "GREEN", "LIGHT GREEN",   "LIME",    "YELLOW",
@@ -260,7 +260,7 @@ enum {
 };
 
 // scale list, first element is the default, last element is used to calculate selector width
-static const char *scale_list[] = {
+constexpr const char *scale_list[] = {
     "C Major",  "C Minor",  "C♭ Major", "C♯ Major", "C♯ Minor", "D Major",  "D Minor", "D♭ Major",
     "D♯ Minor", "E Major",  "E Minor",  "E♭ Major", "E♭ Minor", "F Major",  "F Minor", "F♯ Major",
     "F♯ Minor", "G Major",  "G Minor",  "G♭ Major", "G♯ Minor", "A Major",  "A Minor", "A♭ Major",
@@ -371,7 +371,8 @@ static bool            mute = false;
 static std::string scale_str(scale_list[0]);
 static char record_dir[PATH_MAX] = {};
 
-static ImU32 plot_colors[] = {  // Plot palete, fixed order up to and including pitch
+// Plot palete, fixed order up to and including pitch
+std::initializer_list<ImU32> DefaultPlotColors = {
     palette[ColorDarkGray],       //   Semitone
     palette[ColorLightGray],      //   1st Tonic
     palette[ColorGray],           //   2nd Supertonic
@@ -426,11 +427,11 @@ enum {
     PlotIdxMetronome,
     PlotIdxNote,
     PlotIdxTuner,
-    PlotLineWidthCount = IM_ARRAYSIZE(lut_linew),
-    PlotColorCount     = IM_ARRAYSIZE(plot_colors)
+    PlotLineWidthCount = IM_ARRAYSIZE(lut_linew)
 };
+static std::vector<ImU32> plot_colors(DefaultPlotColors);
 
-static ImU32 UI_colors[] = {
+std::initializer_list<ImU32> DefaultUIColors = {
     IM_COL32(200, 200, 200, 255),
     IM_COL32(  0,   0,   0,   0),
     IM_COL32(255, 255, 255,  30),
@@ -452,9 +453,9 @@ enum {
     UIIdxRecord,
     UIIdxMsgErr,
     UIIdxMsgWarn,
-    UIIdxMsgDbg,
-    UIColorCount       = IM_ARRAYSIZE(UI_colors)
+    UIIdxMsgDbg
 };
+static std::vector<ImU32> UI_colors(DefaultUIColors);
 
 // STATE
 static ImFont      *font_def =  nullptr;  // default font ptr
@@ -772,10 +773,18 @@ void UpdateScale()
     scale_chroma = false;
 }
 
+void UpdatePeakBuf(int size)
+{
+    f_peak_buf.clear();
+    f_peak_buf.resize(size, -1.0);
+    f_peak_buf_pos = 0;
+}
+
 void LoadSettings()
 {
     strcpy_s(record_dir, IM_ARRAYSIZE(record_dir), "f:\\temp");
 
+    UpdatePeakBuf(TunerSmoothDef);
     UpdateCalibration();
     UpdateScale();
 
@@ -791,6 +800,39 @@ void SaveSettings()
     first_run = false;
 
     
+}
+
+void ResetSettings()
+{
+    vol_thres = VolThresDef;
+    x_zoom = PlotXZoomDef;
+    y_zoom = PlotYZoomDef;
+    c_pos = PlotPosDef;
+    rul_right = PlotRulRightDef;
+    semi_lines = PlotSemiLinesDef;
+    semi_lbls = PlotSemiLblsDef;
+    oct_offset = OctOffsetDef;
+    calibration = PitchCalibDef;
+    transpose = TransposeDef;
+    autoscroll = PlotAScrlDef;
+    y_ascr_vel = PlotAScrlVelDef;
+    show_freq = ShowFreqDef;
+    show_tuner = ShowTunerDef;
+    note_names = NoteNamesDef;
+    metronome = MetronomeDef;
+    tempo_val = TempoValueDef;
+    tempo_grid = TempoGridDef;
+    tempo_meter = TempoMeterDef;
+    but_hold = ButtonHoldDef;
+    but_scale = ButtonScaleDef;
+    but_tempo = ButtonTempoDef;
+    but_devices = ButtonDevsDef;
+    scale_str = scale_list[0];
+    plot_colors = DefaultPlotColors;
+
+    UpdatePeakBuf(TunerSmoothDef);
+    UpdateCalibration();
+    UpdateScale();
 }
 
 bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault])
@@ -1845,7 +1887,29 @@ void SettingsWindow()
 
     ImGui::SeparatorText("Settings");
 
-    ImGui::PushItemWidth(-1.0f);
+    // hack the separator
+    ImVec2 btn_width = ImGui::CalcTextSize("defaults") + ImGui::GetStyle().FramePadding * 2;
+    ImGui::SameLine(ImGui::GetStyle().WindowPadding.x + ImGui::GetContentRegionAvail().x - btn_width.x);
+    ImVec2 p_min = ImGui::GetCursorScreenPos();
+    ImVec2 p_max = p_min + btn_width;
+    p_min.x -= ImGui::GetStyle().ItemSpacing.x;
+    ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, ImColor(ImGui::GetStyle().Colors[ImGuiCol_WindowBg]));
+    static double timeout = 0.0;
+    double time = ImGui::GetTime();
+    if (time >= timeout)
+        timeout = 0.0;
+    if (ImGui::Button(timeout > 0.0 ? "confirm" : "defaults", btn_width))
+    {
+        if (time < timeout)
+        {
+            timeout = 0.0;
+            ResetSettings();
+        }
+        else
+            timeout = time + 3.0;
+    }
+
+    ImGui::PushItemWidth(-FLT_MIN);
 
     // Analyzer control
     {
@@ -1923,10 +1987,7 @@ void SettingsWindow()
         ImGui::SameLine();
         int samples = (int)f_peak_buf.size();
         if (ImGui::SliderInt("##smoothing", &samples, TunerSmoothMin, TunerSmoothMax, "smoothing = %d"))
-        {
-            f_peak_buf.resize(samples, -1.0);
-            f_peak_buf_pos = 0;
-        }
+            UpdatePeakBuf(samples);
         ImGui::Unindent();
     }
 
