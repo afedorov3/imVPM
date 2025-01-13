@@ -1,5 +1,9 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.15)
 project(imVocalPitchMonitor DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
+
+# build tools required: CMake, git, make/ninja, C++ compiler (Clang/GCC/MSVC are tested),
+#                       patch (on windows you'll get it with git),
+#                       Windows SDK and MSVC libs for windows build (the only supported option yet)
 
 if (NOT DEFINED OPUS_SUPPORT)
   set(OPUS_SUPPORT "yes")
@@ -21,26 +25,75 @@ if (NOT DEFINED PM_GRAPHICS)
   set(PM_GRAPHICS "dx11")
 endif()
 
+find_program(PATCH patch)
+find_program(SED sed)
+if (${PATCH} STREQUAL "PATCH-NOTFOUND")
+  message(FATAL_ERROR "patch utility not available")
+endif()
+if (${SED} STREQUAL "SED-NOTFOUND")
+  message(FATAL_ERROR "sed utility not available")
+endif()
+
 include_directories(src)
 
+include(FetchContent)
+
+FetchContent_Declare(
+  imgui
+  GIT_REPOSITORY  https://github.com/ocornut/imgui.git
+  GIT_TAG         v1.91.6
+  DOWNLOAD_EXTRACT_TIMESTAMP yes
+)
+
+FetchContent_MakeAvailable(imgui)
+
+if(${PM_GRAPHICS} STREQUAL "dx11")
+  execute_process(
+    COMMAND ${PATCH} -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/imgui/ImGui_ImplDX11_ReCreateFontsTexture.patch
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/_deps/imgui-src
+  )
+endif()
+
 if (OPUS_SUPPORT)
-  # opusfile lacks CMake configuration, provide ours
-  if(NOT EXISTS ${CMAKE_SOURCE_DIR}/external/opusfile/CMakeLists.txt)
+  option(BUILD_TESTING "" OFF)
+
+  FetchContent_Declare(
+    libogg
+    GIT_REPOSITORY  https://github.com/xiph/ogg.git
+    GIT_TAG         v1.3.5
+    DOWNLOAD_EXTRACT_TIMESTAMP yes
+  )
+  FetchContent_Declare(
+    opus
+    GIT_REPOSITORY  https://github.com/xiph/opus.git
+    GIT_TAG         v1.5.2
+    DOWNLOAD_EXTRACT_TIMESTAMP yes
+  )
+  FetchContent_Declare(
+    opusfile
+    GIT_REPOSITORY  https://github.com/xiph/opusfile.git
+    GIT_TAG         v0.12
+    DOWNLOAD_EXTRACT_TIMESTAMP yes
+  )
+
+  FetchContent_MakeAvailable(libogg opus opusfile)
+
+  include_directories(${CMAKE_BINARY_DIR}/_deps/libogg-src/include ${CMAKE_BINARY_DIR}/_deps/opus-src/include ${CMAKE_BINARY_DIR}/_deps/opusfile-src/include)
+
+  # opusfile lacks CMake configuration, provide ours and configure
+  if(NOT EXISTS ${CMAKE_BINARY_DIR}/_deps/opusfile-src/CMakeLists.txt)
     execute_process(
-        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/assets/external/opusfile/CMakeLists.txt ${CMAKE_SOURCE_DIR}/external/opusfile
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/assets/external/opusfile/CMakeLists.txt ${CMAKE_BINARY_DIR}/_deps/opusfile-src
     )
+    add_subdirectory(${CMAKE_BINARY_DIR}/_deps/opusfile-src)
   endif()
 
-  option(BUILD_TESTING "" OFF)
-  add_subdirectory(external/libogg)
-  add_subdirectory(external/opus)
-  add_subdirectory(external/opusfile)
 endif()
 
 ###
 ### font compressing tool
 ###
-add_executable(binary_to_compressed_c EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/external/imgui/misc/fonts/binary_to_compressed_c.cpp)
+add_executable(binary_to_compressed_c EXCLUDE_FROM_ALL ${CMAKE_BINARY_DIR}/_deps/imgui-src/misc/fonts/binary_to_compressed_c.cpp)
 set_target_properties(binary_to_compressed_c
     PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
@@ -72,13 +125,12 @@ endif()
 ###
 ### imVocalPitchMonitor
 ###
-add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp external/stb_vorbis.c src/imgui/backends/${PM_BACKEND}_${PM_GRAPHICS}.cpp external/fft4g.cpp external/imgui/backends/imgui_impl_${PM_GRAPHICS}.cpp external/imgui/backends/imgui_impl_${PM_BACKEND}.cpp external/imgui/imgui.cpp external/imgui/imgui_widgets.cpp external/imgui/imgui_tables.cpp external/imgui/imgui_draw.cpp)
+add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp external/stb_vorbis.c src/imgui/backends/${PM_BACKEND}_${PM_GRAPHICS}.cpp external/fft4g.cpp ${CMAKE_BINARY_DIR}/_deps/imgui-src/backends/imgui_impl_${PM_GRAPHICS}.cpp ${CMAKE_BINARY_DIR}/_deps/imgui-src/backends/imgui_impl_${PM_BACKEND}.cpp ${CMAKE_BINARY_DIR}/_deps/imgui-src/imgui.cpp ${CMAKE_BINARY_DIR}/_deps/imgui-src/imgui_widgets.cpp ${CMAKE_BINARY_DIR}/_deps/imgui-src/imgui_tables.cpp ${CMAKE_BINARY_DIR}/_deps/imgui-src/imgui_draw.cpp)
 set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
-target_include_directories(imvpm PRIVATE src/imgui external external/imgui external/imgui/backends external/fonts external/portable-file-dialogs external/simpleini)
+target_include_directories(imvpm PRIVATE src/imgui external ${CMAKE_BINARY_DIR}/_deps/imgui-src ${CMAKE_BINARY_DIR}/_deps/imgui-src/backends external/fonts external/portable-file-dialogs external/simpleini)
 if (OPUS_SUPPORT)
   target_compile_definitions(imvpm PRIVATE HAVE_OPUS)
-  link_directories(${CMAKE_BINARY_DIR}/external/libogg ${CMAKE_BINARY_DIR}/external/opus ${CMAKE_BINARY_DIR}/external/opusfile)
-  target_include_directories(imvpm PRIVATE external/libogg/include external/opus/include external/opusfile/include)
+  link_directories(${CMAKE_BINARY_DIR}/_deps/libogg-build ${CMAKE_BINARY_DIR}/_deps/opus-build ${CMAKE_BINARY_DIR}/_deps/opusfile-build)
   target_link_libraries(imvpm opusfile ogg opus)
 endif()
 

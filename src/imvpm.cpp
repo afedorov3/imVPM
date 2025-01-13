@@ -36,6 +36,7 @@ TODO:
     autoscroll grace on manual scroll
     restart capture if idle
     portable mode (config alongside executable)
+    OGG file position 0
 */
 
 /*
