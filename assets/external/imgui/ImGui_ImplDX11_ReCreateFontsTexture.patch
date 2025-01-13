@@ -1,0 +1,10 @@
+--- "backends\\imgui_impl_dx11.cpp.orig"	2025-01-13 10:35:45.196178300 +0300
++++ "backends\\imgui_impl_dx11.cpp"	2025-01-13 10:36:51.274206200 +0300
+@@ -627,4 +627,7 @@
+ 
+ //-----------------------------------------------------------------------------
+ 
++#define DX11_FONT_STUB_IMPLEMENTATION
++#include "imgui_dx11_font_stub.h"
++
+ #endif // #ifndef IMGUI_DISABLE

@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.13)
 project(imVocalPitchMonitor DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
 
-# TODO: dep tests
-set(HAVE_OPUS "yes")
+if (NOT DEFINED OPUS_SUPPORT)
+  set(OPUS_SUPPORT "yes")
+endif()
 
 # fonts
 set(UI_FONT "external/fonts/DejaVuSans.ttf")
@@ -21,6 +22,20 @@ if (NOT DEFINED PM_GRAPHICS)
 endif()
 
 include_directories(src)
+
+if (OPUS_SUPPORT)
+  # opusfile lacks CMake configuration, provide ours
+  if(NOT EXISTS ${CMAKE_SOURCE_DIR}/external/opusfile/CMakeLists.txt)
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/assets/external/opusfile/CMakeLists.txt ${CMAKE_SOURCE_DIR}/external/opusfile
+    )
+  endif()
+
+  option(BUILD_TESTING "" OFF)
+  add_subdirectory(external/libogg)
+  add_subdirectory(external/opus)
+  add_subdirectory(external/opusfile)
+endif()
 
 ###
 ### font compressing tool
@@ -60,13 +75,16 @@ endif()
 add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp external/stb_vorbis.c src/imgui/backends/${PM_BACKEND}_${PM_GRAPHICS}.cpp external/fft4g.cpp external/imgui/backends/imgui_impl_${PM_GRAPHICS}.cpp external/imgui/backends/imgui_impl_${PM_BACKEND}.cpp external/imgui/imgui.cpp external/imgui/imgui_widgets.cpp external/imgui/imgui_tables.cpp external/imgui/imgui_draw.cpp)
 set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
 target_include_directories(imvpm PRIVATE src/imgui external external/imgui external/imgui/backends external/fonts external/portable-file-dialogs external/simpleini)
-if (HAVE_OPUS)
+if (OPUS_SUPPORT)
   target_compile_definitions(imvpm PRIVATE HAVE_OPUS)
+  link_directories(${CMAKE_BINARY_DIR}/external/libogg ${CMAKE_BINARY_DIR}/external/opus ${CMAKE_BINARY_DIR}/external/opusfile)
   target_include_directories(imvpm PRIVATE external/libogg/include external/opus/include external/opusfile/include)
-  target_link_libraries(imvpm ${CMAKE_SOURCE_DIR}/external/libogg/build/ogg.lib ${CMAKE_SOURCE_DIR}/external/opus/build/opus.lib ${CMAKE_SOURCE_DIR}/external/opusfile/build/opusfile.lib)
+  target_link_libraries(imvpm opusfile ogg opus)
 endif()
 
-
+###
+### compiler options
+###
 if (WIN32)
   if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_options(imvpm PRIVATE "-municode")
@@ -89,7 +107,7 @@ if (WIN32)
 endif()
 
 ###
-### dependencies
+### GUI dependencies
 ###
 if(${PM_BACKEND} STREQUAL "win32")
   target_link_libraries(imvpm Dwmapi)

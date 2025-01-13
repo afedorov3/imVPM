@@ -835,7 +835,7 @@ bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, f
 
 bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, bool &value)
 {
-    constexpr const char *values[] = { "false", "true", "no", "yes", "0", "1" };
+    constexpr const char *values[] = { "false", "true", "off", "on", "no", "yes", "0", "1" };
 
     const char *pv = ini.GetValue(section, key);
     if (pv == nullptr)
