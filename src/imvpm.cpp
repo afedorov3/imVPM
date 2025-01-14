@@ -34,8 +34,6 @@
 /*
 TODO:
     process command arguments
-    autoscroll grace on manual scroll
-    restart capture if idle
     drag panning
 */
 
@@ -301,6 +299,7 @@ static constexpr int   PlotAScrlVelMax =    10;  // plot: vertical autoscroll ma
 static constexpr int   PlotAScrlVelMin =     1;  // plot: vertical autoscroll min value, Cents
 static constexpr int   PlotAScrlVelDef =     3;  // plot: vertical autoscroll, Cents, default value [3]
 static constexpr int   PlotAScrlMar =      100;  // plot: vertical autoscroll margin, Cents
+static constexpr double PlotAScrlGrace =   3.0;  // plot: vertical autoscroll grace period, seconds
 static constexpr bool  PlotRulRightDef =  true;  // plot: ruller on the right side, default value [false] FIXME default
 static constexpr bool  PlotSemiLinesDef = true;  // plot: draw semitone lines if not on Chromatic scale, default value
 static constexpr bool  PlotSemiLblsDef = false;  // plot: draw semitone label, default value
@@ -364,7 +363,7 @@ static int       oct_offset = OctOffsetDef;
 static float    calibration = PitchCalibDef;
 static int        transpose = TransposeDef;
 static bool      autoscroll = PlotAScrlDef;
-static int       y_ascr_vel = PlotAScrlVelDef;
+static int      y_ascrl_vel = PlotAScrlVelDef;
 static bool       show_freq = ShowFreqDef;
 static bool      show_tuner = ShowTunerDef;
 static int       note_names = NoteNamesDef;
@@ -488,6 +487,7 @@ static bool      scale_major =     true;  // plot: scale is Major
 static bool     scale_chroma =    false;  // plot: scale is Chromatic
 static float      x_peak_off =     0.0f;  // peak note position offset
 static ImVec2      rullbl_sz;             // vertical axis ruler size
+static double  y_ascrl_grace =      0.0;  // autoscroll grace
 static ImVec2      widget_sz;             // UI widget size
 static float   widget_margin;             // UI widget margin
 static float  widget_padding;             // UI widget padding
@@ -958,7 +958,7 @@ void LoadSettings()
             GETVAL("imvpm", calibration, PitchCalibMin, PitchCalibMax);
             GETVAL("imvpm", transpose, TransposeMin, TransposeMax);
             GETVAL("imvpm", autoscroll);
-            GETVAL("imvpm", y_ascr_vel, PlotAScrlVelMin, PlotAScrlVelMax);
+            GETVAL("imvpm", y_ascrl_vel, PlotAScrlVelMin, PlotAScrlVelMax);
             GETVAL("imvpm", show_freq);
             GETVAL("imvpm", show_tuner);
             GETVAL("imvpm", note_names, 0, NoteNamesCount - 1);
@@ -1047,7 +1047,7 @@ void SaveSettings()
     SETVAL ("imvpm", calibration, "%0.3f");
     SETVAL ("imvpm", transpose, "%d");
     SETBOOL("imvpm", autoscroll);
-    SETVAL ("imvpm", y_ascr_vel, "%d");
+    SETVAL ("imvpm", y_ascrl_vel, "%d");
     SETBOOL("imvpm", show_freq);
     SETBOOL("imvpm", show_tuner);
     SETVAL ("imvpm", note_names, "%d");
@@ -1103,7 +1103,7 @@ void ResetSettings()
     calibration = PitchCalibDef;
     transpose = TransposeDef;
     autoscroll = PlotAScrlDef;
-    y_ascr_vel = PlotAScrlVelDef;
+    y_ascrl_vel = PlotAScrlVelDef;
     show_freq = ShowFreqDef;
     show_tuner = ShowTunerDef;
     note_names = NoteNamesDef;
@@ -1379,6 +1379,29 @@ void ImGui::AppNewFrame()
 
     audiohandler.getState(ah_state, &ah_len, &ah_pos); // get handler state for a frame
 
+    // if handler is idling try to restart after a grace period for some number of tries
+    static double restart_at = 0.0;
+    static int tries = 0;
+    if (ah_state.isIdle())
+    {
+        if (tries < 3)
+        {
+            if (restart_at == 0.0)
+                restart_at = ImGui::GetTime() + 1.0;
+            else if (ImGui::GetTime() > restart_at)
+            {
+                restart_at = 0.0;
+                tries++;
+                audiohandler.capture();
+            }
+        }
+    }
+    else
+    {
+        restart_at = 0.0;
+        tries = 0;
+    }
+
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->Pos);
     ImGui::SetNextWindowSize(ImGui::GetMainViewport()->Size);
     // Body of the main window starts here.
@@ -1525,7 +1548,7 @@ void CaptureDevices()
         const AudioHandler::Devices &devices = audiohandler.getCaptureDevices();
         for (int n = 0; n < devices.list.size(); n++) {
             bool is_selected = devices.list[n].name == devices.selectedName;
-            if (ImGui::MenuItem(devices.list[n].name.c_str(), "", is_selected) && !is_selected)
+            if (ImGui::MenuItem(devices.list[n].name.c_str(), "", is_selected) && (!is_selected || ah_state.isIdle()))
             {
                 audiohandler.setPreferredCaptureDevice(devices.list[n].name.c_str());
                 if (ah_state.isIdle())
@@ -1871,6 +1894,7 @@ inline void InputControl()
         if (io.KeyMods == ImGuiMod_None && io.MouseWheel != 0.0f)
         {
             c_pos += io.MouseWheel * PlotYScrlSpd;
+            y_ascrl_grace = ImGui::GetTime() + PlotAScrlGrace;
         }
 
         if (click_hold && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
@@ -1924,13 +1948,13 @@ void Draw()
     c_top = c_pos + wsize.y / c2y_mul;
 
     // do autoscrolling
-    if (autoscroll && !hold && ah_state.isActive() && c_peak >= 0.0) {
+    if (autoscroll && !hold && ah_state.isActive() && c_peak >= 0.0 && y_ascrl_grace < ImGui::GetTime()) {
         static int velocity = 0;
 
         if (c_peak < c_pos + (float)PlotAScrlMar)
-            velocity -= y_ascr_vel;
+            velocity -= y_ascrl_vel;
         else if (c_peak > c_top - (float)PlotAScrlMar)
-            velocity += y_ascr_vel;
+            velocity += y_ascrl_vel;
         else
             velocity = 0;
         c_pos += (float)velocity;
@@ -2279,7 +2303,7 @@ void SettingsWindow()
         ImGui::Checkbox("Enable autoscroll", &autoscroll);
         if (!autoscroll)
             ImGui::BeginDisabled();
-        ImGui::SameLine(); ImGui::SliderInt("##velocity", &y_ascr_vel, PlotAScrlVelMin, PlotAScrlVelMax, "velocity = %d");
+        ImGui::SameLine(); ImGui::SliderInt("##velocity", &y_ascrl_vel, PlotAScrlVelMin, PlotAScrlVelMax, "velocity = %d");
         if (!autoscroll)
             ImGui::EndDisabled();
     }
