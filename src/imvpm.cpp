@@ -1115,8 +1115,13 @@ void ResetSettings()
     but_scale = ButtonScaleDef;
     but_tempo = ButtonTempoDef;
     but_devices = ButtonDevsDef;
+    click_hold = ClickToHoldDef;
     scale_str = scale_list[0];
+    ImGui::SysWndBgColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
     plot_colors = DefaultPlotColors;
+    play_volume = 1.0f;
+    mute = false;
+    audiohandler.setPlaybackVolumeFactor(play_volume);
 
     UpdatePeakBuf(TunerSmoothDef);
     UpdateCalibration();
@@ -1467,6 +1472,8 @@ void ImGui::AppNewFrame()
 
     SettingsWindow();
     ImGui::ShowAboutWindow(nullptr);
+
+    //ImGui::ShowIDStackToolWindow(nullptr);
 }
 
 void ImGui::AppDestroy()
@@ -1769,12 +1776,12 @@ bool ColorPicker(const char *label, ImU32 &color, float split)
     float button_width(100.0f * scale);
     static ImColor backup_color;
     bool ret = false;
-
     ImColor col(color);
+
+    ImGui::PushID(label);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
     ImGui::SameLine(split >= 0.0f ? split : ImGui::GetContentRegionAvail().x + ImGui::GetCursorPos().x - button_width);
-    ImGui::PushID(label); // use memory address as id
     if (ImGui::ColorButton("##ColorButton", col, ImGuiColorEditFlags_NoAlpha, ImVec2(button_width, ImGui::GetFrameHeight())))
     {
         ImGui::OpenPopup("##PaletePicker");
@@ -1800,10 +1807,13 @@ bool ColorPicker(const char *label, ImU32 &color, float split)
 
         ImGui::BeginGroup(); // Lock X position
         ImGui::Text("Current");
-        ImGui::ColorButton("##Current", col, ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_AlphaPreviewHalf, preview_sz);
+        ImGui::ColorButton("##CurrentColor", col, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoPicker, preview_sz);
         ImGui::Text("Previous");
-        if (ImGui::ColorButton("##Previous", backup_color, ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_AlphaPreviewHalf, preview_sz))
+        if (ImGui::ColorButton("##PreviousColor", backup_color, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoPicker, preview_sz))
+        {
             color = backup_color;
+            ret = true;
+        }
         ImGui::Separator();
         ImGui::Text("Palette");
         for (int n = 0; n < ColorCount; n++)
@@ -2170,20 +2180,24 @@ void SettingsWindow()
         return;
     }
 
+    // clip the separator
+    ImVec2 btn_sz = ImGui::CalcTextSize("defaults") + ImGui::GetStyle().FramePadding * 2;
+    ImVec2 b_pos = ImGui::GetCursorPos();
+    b_pos.x += ImGui::GetContentRegionAvail().x - btn_sz.x;
+    ImVec2 cl_min = ImGui::GetCursorScreenPos();
+    ImVec2 cl_max = ImGui::GetWindowPos() + b_pos;
+    cl_max.x -= ImGui::GetStyle().ItemSpacing.x;
+    cl_max.y += btn_sz.y;
+    ImGui::PushClipRect(cl_min, cl_max, true);
     ImGui::SeparatorText("Settings");
+    ImGui::PopClipRect();
+    ImGui::SetCursorPos(b_pos);
 
-    // hack the separator
-    ImVec2 btn_width = ImGui::CalcTextSize("defaults") + ImGui::GetStyle().FramePadding * 2;
-    ImGui::SameLine(ImGui::GetStyle().WindowPadding.x + ImGui::GetContentRegionAvail().x - btn_width.x);
-    ImVec2 p_min = ImGui::GetCursorScreenPos();
-    ImVec2 p_max = p_min + btn_width;
-    p_min.x -= ImGui::GetStyle().ItemSpacing.x;
-    ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, ImColor(ImGui::GetStyle().Colors[ImGuiCol_WindowBg]));
     static double timeout = 0.0;
     double time = ImGui::GetTime();
     if (time >= timeout)
         timeout = 0.0;
-    if (ImGui::Button(timeout > 0.0 ? "confirm" : "defaults", btn_width))
+    if (ImGui::Button(timeout > 0.0 ? "confirm" : "defaults", btn_sz))
     {
         if (time < timeout)
         {
@@ -2229,7 +2243,7 @@ void SettingsWindow()
     {
         ImGui::BeginGroup();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Octave number: 440Hz =");
+        ImGui::TextUnformatted("Octave reference: 440Hz =");
         ImGui::SameLine(); ImGui::RadioButton("A4", &oct_offset, OctOffsetA4);
         ImGui::SameLine(); ImGui::RadioButton("A3", &oct_offset, OctOffsetA3);
         ImGui::EndGroup();
