@@ -14,7 +14,12 @@
 #define MA_NO_ENGINE
 #define MA_ENABLE_ONLY_SPECIFIC_BACKENDS
 #define MA_ENABLE_NULL
+#if defined(HAVE_VORBIS)
+#define MA_NO_VORBIS
+#endif
+#if defined(HAVE_OPUS)
 #define MA_NO_OPUS
+#endif
 
 // FIXME define in Makefile
 #ifdef _WIN32
@@ -114,7 +119,6 @@ private:
     struct ma_uninit {
         template <typename T>
         constexpr void operator()(T *ptr) const noexcept {
-            DBG("uninit %p\n", ptr);
             fn_uninit(ptr);
             delete ptr;
         }
@@ -123,8 +127,7 @@ private:
     struct ma_stop_uninit {
         template <typename T>
         constexpr void operator()(T *ptr) const noexcept {
-            ma_result ret = fn_stop(ptr);
-            DBG("stop uninit %p %d\n", ptr, ret);
+            fn_stop(ptr);
             fn_uninit(ptr);
             delete ptr;
         }

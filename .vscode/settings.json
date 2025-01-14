@@ -61,7 +61,11 @@
         "xtr1common": "cpp",
         "xutility": "cpp",
         "iostream": "cpp",
-        "fstream": "cpp"
+        "fstream": "cpp",
+        "map": "cpp",
+        "set": "cpp",
+        "xhash": "cpp",
+        "xtree": "cpp"
     },
     "cmake.buildDirectory": "${workspaceFolder}/build/${buildKit}/${buildType}",
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"

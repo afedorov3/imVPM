@@ -78,8 +78,6 @@ if (OPUS_SUPPORT)
 
   FetchContent_MakeAvailable(libogg opus opusfile)
 
-  include_directories(${CMAKE_BINARY_DIR}/_deps/libogg-src/include ${CMAKE_BINARY_DIR}/_deps/opus-src/include ${CMAKE_BINARY_DIR}/_deps/opusfile-src/include)
-
   # opusfile lacks CMake configuration, provide ours and configure
   if(NOT EXISTS ${CMAKE_BINARY_DIR}/_deps/opusfile-src/CMakeLists.txt)
     execute_process(
@@ -87,6 +85,7 @@ if (OPUS_SUPPORT)
     )
     add_subdirectory(${CMAKE_BINARY_DIR}/_deps/opusfile-src)
   endif()
+  target_include_directories(opusfile PUBLIC ${CMAKE_BINARY_DIR}/_deps/libogg-src/include ${CMAKE_BINARY_DIR}/_deps/opus-src/include)
 
 endif()
 
@@ -130,6 +129,7 @@ set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
 target_include_directories(imvpm PRIVATE src/imgui external ${CMAKE_BINARY_DIR}/_deps/imgui-src ${CMAKE_BINARY_DIR}/_deps/imgui-src/backends external/fonts external/portable-file-dialogs external/simpleini)
 if (OPUS_SUPPORT)
   target_compile_definitions(imvpm PRIVATE HAVE_OPUS)
+  target_include_directories(imvpm PRIVATE ${CMAKE_BINARY_DIR}/_deps/opusfile-src/include)
   link_directories(${CMAKE_BINARY_DIR}/_deps/libogg-build ${CMAKE_BINARY_DIR}/_deps/opus-build ${CMAKE_BINARY_DIR}/_deps/opusfile-build)
   target_link_libraries(imvpm opusfile ogg opus)
 endif()

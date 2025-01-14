@@ -33,10 +33,9 @@
 
 /*
 TODO:
+    process command arguments
     autoscroll grace on manual scroll
     restart capture if idle
-    portable mode (config alongside executable)
-    OGG file position 0
 */
 
 /*
@@ -133,8 +132,10 @@ using namespace logger;
 // Play it nice with Windows users (Update: May 2018, Notepad now supports Unix-style carriage returns!)
 #ifdef _WIN32
 #define IM_NEWLINE  "\r\n"
+typedef std::wstring pathstr_t;
 #else
 #define IM_NEWLINE  "\n"
+typedef std::string pathstr_t;
 #endif
 
 // Helpers
@@ -162,6 +163,9 @@ using namespace logger;
 #define IM_MAX(A, B)            (((A) >= (B)) ? (A) : (B))
 #define IM_CLAMP(V, MN, MX)     ((V) < (MN) ? (MN) : (V) > (MX) ? (MX) : (V))
 
+#define _WIDESTR(s) L ## s
+#define WIDESTR(s) _WIDESTR(s)
+
 // Enforce cdecl calling convention for functions called by the standard library,
 // in case compilation settings changed the default to e.g. __vectorcall
 #ifndef IMGUI_CDECL
@@ -181,6 +185,7 @@ using namespace logger;
 //-----------------------------------------------------------------------------
 
 // CONSTANTS
+#define CONFIG_FILENAME "imvpmrc"    // config file name
 #define FONT               Font      // symbol names that was given to binary_to_compressed_c when fonts.h being created
 #define FONT_NOTES         FontMono
 #define FONT_ICONS_REGULAR FARegular
@@ -491,6 +496,8 @@ static float    progress_hgt;             // UI playback progress height
 static bool   progress_hover =    false;  // UI playback progress is hovered
 static std::vector<double> f_peak_buf(TunerSmoothDef, -1.0);    // peak frequency averaging buffer
 static size_t f_peak_buf_pos =        0;  // peak frequency averaging buffer position
+static pathstr_t config_file;             // path to config file
+static bool        ro_config = false;     // config file is read-only or can't be accessed
 static std::string last_played_file;      // path to last played file
 static std::string last_record_file;      // path to last recorded file
 
@@ -585,21 +592,60 @@ int sprintf_s(char *dst, size_t dst_sz, const char *fmt, ...)
 #endif // !_WIN32
 
 #if defined(_WIN32)
-std::wstring GetConfigPath()
+pathstr_t GetConfigPath()
 {
-    std::string path;
-    path = pfd::internal::getenv("APPDATA");
+    // try local file first
+    wchar_t buf[MAX_PATH] = { 0 };
+    DWORD count = GetModuleFileNameW(NULL, buf, MAX_PATH);
+    while (count > 0 && count < IM_ARRAYSIZE(buf))
+    {
+        pathstr_t path = buf;
+        auto sep = path.rfind('\\');
+        if (sep == std::string::npos)
+            break;
 
+        path.resize(sep + 1);
+        path += WIDESTR(CONFIG_FILENAME);
+
+        struct _stat sb;
+        int ret = _wstat(path.c_str(), &sb);
+        if (ret != 0 || (sb.st_mode & _S_IFDIR))
+            break;
+
+        return path;
+    }
+
+    std::string path = pfd::internal::getenv("APPDATA");
     if (path.empty())
         path = pfd::path::home();
-    path += "\\imvpmrc";
+    path += "\\" CONFIG_FILENAME;
 
     return pfd::internal::str2wstr(path);
 }
 #else
-std::string GetConfigPath()
+pathstr_t GetConfigPath()
 {
-    return pfd::path::home() + "/.config/imvpmrc";
+    char buf[PATH_MAX];
+    ssize_t count = readlink("/proc/self/exe", buf, IM_ARRAYSIZE(buf));
+    while (count > 0 && count < IM_ARRAYSIZE(buf))
+    {
+        std::string path = buf;
+        auto sep = path.rfind('/');
+        if (sep == std::string::npos)
+            break;
+
+        path.resize(sep + 1);
+        path += CONFIG_FILENAME;
+
+        struct stat sb;
+        int ret = stat(path.c_str(), &sb);
+        if (ret != 0 || (sb.st_mode & S_IFDIR))
+            break;
+
+        return path;
+    }
+
+    return pfd::path::home() + "/.config/" CONFIG_FILENAME;
 }
 #endif
 
@@ -881,49 +927,62 @@ bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, s
 #define GETVAL(sec, var, ...) GetIniValue(ini, sec, #var, var VA_ARGS(__VA_ARGS__))
 void LoadSettings()
 {
-    CSimpleIniA ini(true /*Unicode*/);
+    CSimpleIniA ini(true /* Unicode */);
 
-	SI_Error rc = ini.LoadFile(GetConfigPath().c_str());
-	if (rc == SI_OK) {
-        GETVAL("imvpm", first_run);
-        GETVAL("imvpm", vol_thres, VolThresMin, VolThresMax);
-        GETVAL("imvpm", x_zoom, PlotXZoomMin, PlotXZoomMax);
-        GETVAL("imvpm", y_zoom, PlotYZoomMin, PlotYZoomMax);
-        GETVAL("imvpm", c_pos, PlotRangeMin, PlotRangeMax);
-        GETVAL("imvpm", rul_right);
-        GETVAL("imvpm", semi_lines);
-        GETVAL("imvpm", semi_lbls);
-        GETVAL("imvpm", oct_offset, OctOffsetMin, OctOffsetMax);
-        GETVAL("imvpm", calibration, PitchCalibMin, PitchCalibMax);
-        GETVAL("imvpm", transpose, TransposeMin, TransposeMax);
-        GETVAL("imvpm", autoscroll);
-        GETVAL("imvpm", y_ascr_vel, PlotAScrlVelMin, PlotAScrlVelMax);
-        GETVAL("imvpm", show_freq);
-        GETVAL("imvpm", show_tuner);
-        GETVAL("imvpm", note_names, 0, NoteNamesCount - 1);
-        GETVAL("imvpm", metronome);
-        GETVAL("imvpm", tempo_val, TempoValueMin, TempoValueMax);
-        GETVAL("imvpm", tempo_grid);
-        GETVAL("imvpm", tempo_meter, TempoMeterMin, TempoMeterMax);
-        GETVAL("imvpm", but_hold);
-        GETVAL("imvpm", but_scale);
-        GETVAL("imvpm", but_tempo);
-        GETVAL("imvpm", but_devices);
-        GETVAL("imvpm", play_volume, 0.0f, 1.0f);
-        GETVAL("imvpm", mute);
-        GETVAL("imvpm", scale_str, (const char**)scale_list, IM_ARRAYSIZE(scale_list));
-        GETVAL("imvpm", record_dir, IM_ARRAYSIZE(record_dir));
+    config_file = GetConfigPath();
+
+    if (!config_file.empty())
+    {
+ #if defined(_WIN32)
+        if (_waccess_s(config_file.c_str(), 02) == EACCES)
+            ro_config = true;
+ #else
+        if (access(config_file.c_str(), W_OK) < 0 && errno == EACCES)
+            ro_config = true;
+ #endif
+
+        if (ini.LoadFile(config_file.c_str()) == SI_OK)
         {
-            int size;
-            if (GetIniValue(ini, "imvpm", "f_peak_buf_sz", size, TunerSmoothMin, TunerSmoothMax))
-                UpdatePeakBuf(size);
-        }
-        {
-            char key[64];
-            for (size_t i = 0; i < plot_colors.size(); i++)
+            GETVAL("imvpm", first_run);
+            GETVAL("imvpm", vol_thres, VolThresMin, VolThresMax);
+            GETVAL("imvpm", x_zoom, PlotXZoomMin, PlotXZoomMax);
+            GETVAL("imvpm", y_zoom, PlotYZoomMin, PlotYZoomMax);
+            GETVAL("imvpm", c_pos, PlotRangeMin, PlotRangeMax);
+            GETVAL("imvpm", rul_right);
+            GETVAL("imvpm", semi_lines);
+            GETVAL("imvpm", semi_lbls);
+            GETVAL("imvpm", oct_offset, OctOffsetMin, OctOffsetMax);
+            GETVAL("imvpm", calibration, PitchCalibMin, PitchCalibMax);
+            GETVAL("imvpm", transpose, TransposeMin, TransposeMax);
+            GETVAL("imvpm", autoscroll);
+            GETVAL("imvpm", y_ascr_vel, PlotAScrlVelMin, PlotAScrlVelMax);
+            GETVAL("imvpm", show_freq);
+            GETVAL("imvpm", show_tuner);
+            GETVAL("imvpm", note_names, 0, NoteNamesCount - 1);
+            GETVAL("imvpm", metronome);
+            GETVAL("imvpm", tempo_val, TempoValueMin, TempoValueMax);
+            GETVAL("imvpm", tempo_grid);
+            GETVAL("imvpm", tempo_meter, TempoMeterMin, TempoMeterMax);
+            GETVAL("imvpm", but_hold);
+            GETVAL("imvpm", but_scale);
+            GETVAL("imvpm", but_tempo);
+            GETVAL("imvpm", but_devices);
+            GETVAL("imvpm", play_volume, 0.0f, 1.0f);
+            GETVAL("imvpm", mute);
+            GETVAL("imvpm", scale_str, (const char**)scale_list, IM_ARRAYSIZE(scale_list));
+            GETVAL("imvpm", record_dir, IM_ARRAYSIZE(record_dir));
             {
-                sprintf_s(key, IM_ARRAYSIZE(key), "plot_colors_%zu", i);
-                GetIniValue(ini, "imvpm", key, (int&)plot_colors[i], INT_MIN, INT_MAX);
+                int size;
+                if (GetIniValue(ini, "imvpm", "f_peak_buf_sz", size, TunerSmoothMin, TunerSmoothMax))
+                    UpdatePeakBuf(size);
+            }
+            {
+                char key[64];
+                for (size_t i = 0; i < plot_colors.size(); i++)
+                {
+                    sprintf_s(key, IM_ARRAYSIZE(key), "plot_colors_%zu", i);
+                    GetIniValue(ini, "imvpm", key, (int&)plot_colors[i], INT_MIN, INT_MAX);
+                }
             }
         }
     }
@@ -943,7 +1002,10 @@ void LoadSettings()
 #define SETBOOL(sec, var) do { ini.SetValue(sec, #var, (var) ? "true" : "false"); } while(0)
 void SaveSettings()
 {
-    CSimpleIniA ini(true /*Unicode*/);
+    if (config_file.empty() || ro_config)
+        return;
+
+    CSimpleIniA ini(true /* Unicode */);
     char sval[64];
 
     first_run = false;
@@ -991,7 +1053,7 @@ void SaveSettings()
         }
     }
 
-    ini.SaveFile(GetConfigPath().c_str());
+    ini.SaveFile(config_file.c_str());
 }
 
 void ResetSettings()
@@ -1360,7 +1422,7 @@ void ImGui::AppNewFrame()
         }
 
         // playback progress
-        if (ah_state.isPlaying())
+        if (ah_state.isPlaying() && ah_len > 0)
             PlaybackProgress();
 
         InputControl();
@@ -2097,6 +2159,13 @@ void SettingsWindow()
         }
         else
             timeout = time + 3.0;
+    }
+
+    if (ro_config)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, UI_colors[UIIdxMsgWarn]);
+        ImGui::TextUnformatted("Config is read-only, settings are not persistent");
+        ImGui::PopStyleColor();
     }
 
     ImGui::PushItemWidth(-FLT_MIN);

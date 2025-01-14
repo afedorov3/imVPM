@@ -6,11 +6,18 @@
 #include <locale>
 #include <algorithm>
 
+/* Known issues:
+   Ogg length always reported as 0 on windows due to ma_decoder_init_file_w redirection
+*/
+
 #define STB_VORBIS_HEADER_ONLY
 #include "stb_vorbis.c"
 
-//#define DBG(...) fprintf(stderr, __VA_ARGS__)
+#if defined(DEBUG) || defined(_DEBUG)
+#define DBG(...) fprintf(stderr, __VA_ARGS__)
+#else
 #define DBG(...)
+#endif // !DEBUG
 
 #define MINIAUDIO_IMPLEMENTATION
 #include "AudioHandler.h"
@@ -602,7 +609,7 @@ void AudioHandler::commandProc()
     do {
         Cmd cc = pc.cmdQueue.pendingCommand();
         std::lock_guard<std::timed_mutex> lock(pc.mutex);
-        DBG("cmd %u\n", cc.cmd);
+        DBG("AudioHandler: cmd %u sarg %s uarg %llu farg %g\n", cc.cmd, cc.argStr.c_str(), cc.argU64, cc.argF32);
         switch(cc.cmd) {
         case CmdNone:
             break;

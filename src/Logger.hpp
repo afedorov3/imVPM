@@ -35,11 +35,11 @@ public:
 
     typedef void (*MsgCB)(void *param);
 
-    Logger(size_t MaxSize = 200) :
+    Logger(LOG_LVL Lvl = LOG_INFO, size_t MaxSize = 200) :
         mSize(0),
         mMaxSize(MaxSize),
         mLastN(0),
-        mLvl(LOG_INFO),
+        mLvl(Lvl),
         mCB(nullptr),
         mCBparam(nullptr)
     {
