@@ -30,7 +30,7 @@
 
 #include "miniaudio.h"
 #if defined(HAVE_OPUS)
-#include "miniaudio_libopus.h"
+#include "extras/miniaudio_libopus.h"
 #endif // defined(HAVE_OPUS)
 
 class AudioHandler {

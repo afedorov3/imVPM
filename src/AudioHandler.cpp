@@ -11,7 +11,7 @@
 */
 
 #define STB_VORBIS_HEADER_ONLY
-#include "stb_vorbis.c"
+#include "extras/stb_vorbis.c"
 
 #if defined(DEBUG) || defined(_DEBUG)
 #define DBG(...) fprintf(stderr, __VA_ARGS__)

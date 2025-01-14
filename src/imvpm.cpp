@@ -36,6 +36,7 @@ TODO:
     process command arguments
     autoscroll grace on manual scroll
     restart capture if idle
+    drag panning
 */
 
 /*
@@ -185,7 +186,7 @@ typedef std::string pathstr_t;
 //-----------------------------------------------------------------------------
 
 // CONSTANTS
-#define CONFIG_FILENAME "imvpmrc"    // config file name
+#define CONFIG_FILENAME    "imvpmrc" // config file name
 #define FONT               Font      // symbol names that was given to binary_to_compressed_c when fonts.h being created
 #define FONT_NOTES         FontMono
 #define FONT_ICONS_REGULAR FARegular
@@ -317,6 +318,7 @@ static constexpr bool  ButtonHoldDef =    true;  // UI: show hold button by defa
 static constexpr bool  ButtonScaleDef =   true;  // UI: show scale selector by default [true]
 static constexpr bool  ButtonTempoDef =   true;  // UI: show tempo selector by default [true]
 static constexpr bool  ButtonDevsDef =    true;  // UI: show device selector by default [true]
+static constexpr bool  ClickToHoldDef =   true;  // UI: click on canvas to toggle hold / pause [true]
 
 // selections
 enum {                                           // settings: note naming scheme
@@ -374,6 +376,7 @@ static bool        but_hold = ButtonHoldDef;
 static bool       but_scale = ButtonScaleDef;
 static bool       but_tempo = ButtonTempoDef;
 static bool     but_devices = ButtonDevsDef;
+static bool      click_hold = ClickToHoldDef;
 static float    play_volume = 1.0f;
 static bool            mute = false;
 static std::string scale_str(scale_list[0]);
@@ -774,7 +777,7 @@ void ToggleMute()
 
 void ToggleFullscreen()
 {
-    if (ImGui::SysIsMaximized())
+    if (ImGui::SysWndState == ImGui::WSMaximized)
         ImGui::SysRestore();
     else
         ImGui::SysMaximize();
@@ -967,6 +970,7 @@ void LoadSettings()
             GETVAL("imvpm", but_scale);
             GETVAL("imvpm", but_tempo);
             GETVAL("imvpm", but_devices);
+            GETVAL("imvpm", click_hold);
             GETVAL("imvpm", play_volume, 0.0f, 1.0f);
             GETVAL("imvpm", mute);
             GETVAL("imvpm", scale_str, (const char**)scale_list, IM_ARRAYSIZE(scale_list));
@@ -985,6 +989,28 @@ void LoadSettings()
                 }
             }
         }
+    }
+    {
+        int ival;
+        if (GetIniValue(ini, "imvpm", "wnd_bg_color", ival, INT_MIN, INT_MAX))
+            ImGui::SysWndBgColor = ImColor((ImU32)ival);
+        const char *pv = ini.GetValue("imvpm", "wnd_pos");
+        if (pv)
+        {
+            ImRect winpos;
+            char *end;
+            int i;
+            for (i = 0; i < 4; i++, pv = end)
+            {
+                ImS32 val = strtol(pv, &end, 0);
+                if (*end != ' ' && *end != '\0')
+                    break;
+                reinterpret_cast<ImS32*>(&winpos.x)[i] = val; // yacky
+            }
+            if (i == 4)
+                ImGui::SysWndPos = winpos;
+        }
+        GetIniValue(ini, "imvpm", "wnd_state", (int&)ImGui::SysWndState, ImGui::WSNormal, ImGui::WSMaximized);
     }
 
     UpdateCalibration();
@@ -1033,6 +1059,7 @@ void SaveSettings()
     SETBOOL("imvpm", but_scale);
     SETBOOL("imvpm", but_tempo);
     SETBOOL("imvpm", but_devices);
+    SETBOOL("imvpm", click_hold);
     SETVAL ("imvpm", play_volume, "%0.3f");
     SETBOOL("imvpm", mute);
     ini.SetValue("imvpm", "scale_str", scale_str.c_str());
@@ -1052,6 +1079,13 @@ void SaveSettings()
             ini.SetValue("imvpm", key, sval);
         }
     }
+    // window state
+    sprintf_s(sval, IM_ARRAYSIZE(sval), "0x%X", (ImU32)ImColor(ImGui::SysWndBgColor));
+    ini.SetValue("imvpm", "wnd_bg_color", sval);
+    sprintf_s(sval, IM_ARRAYSIZE(sval), "%d %d %d %d", ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h);
+    ini.SetValue("imvpm", "wnd_pos", sval);
+    sprintf_s(sval, IM_ARRAYSIZE(sval), "%d", (int)ImGui::SysWndState);
+    ini.SetValue("imvpm", "wnd_state", sval);
 
     ini.SaveFile(config_file.c_str());
 }
@@ -1277,9 +1311,9 @@ bool ImGui::AppConfig()
     style.ColorButtonPosition = ImGuiDir_Left;
     style.Colors[ImGuiCol_Text] = ImColor(UI_colors[UIIdxDefault]);
 
-    widget_padding = font_widget_sz * scale / 10;
+    widget_padding = font_widget_sz * scale / 5;
     widget_sz = ImVec2(font_widget_sz * scale + widget_padding * 2, font_widget_sz * scale + widget_padding * 2);
-    widget_margin = font_widget_sz * scale / 2;
+    widget_margin = font_widget_sz * scale / 2.5;
     menu_spacing = 8.0f * scale;
 
     return true;
@@ -1313,7 +1347,7 @@ void ImGui::AppNewFrame()
         x_peak_off = ImGui::CalcTextSize("8").x * 1.5f;
         ImGui::PopFont();
         ImGui::PushFont(font_def);
-        tempo_sz = ImVec2(ImGui::CalcTextSize("888").x + widget_padding * 2, widget_sz.y + widget_padding * 2);
+        tempo_sz = ImVec2(ImGui::CalcTextSize("888").x + widget_padding * 2, widget_sz.y);
         scale_sel_wdt = ImGui::CalcTextSize(scale_list[IM_ARRAYSIZE(scale_list) - 1]).x + menu_spacing * 4;
         hold_btn_sz = ImGui::CalcTextSize("HOLD"); hold_btn_sz.x += widget_padding * 2; hold_btn_sz.y += widget_padding * 2;
         ImGui::PopFont();
@@ -1398,7 +1432,6 @@ void ImGui::AppNewFrame()
         // tempo control
         if (but_tempo)
         {
-            pos.y -= widget_padding;
             ImGui::SetCursorPos(pos);
             TempoControl();
         }
@@ -1830,7 +1863,7 @@ inline void InputControl()
             c_pos += io.MouseWheel * PlotYScrlSpd;
         }
 
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        if (click_hold && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
             TogglePause();
     }
 
@@ -2278,6 +2311,7 @@ void SettingsWindow()
         ImGui::SameLine(); ImGui::Checkbox("Scale", &but_scale);
         ImGui::SameLine(); ImGui::Checkbox("Tempo", &but_tempo);
         ImGui::SameLine(); ImGui::Checkbox("Device selector", &but_devices);
+        ImGui::Checkbox("Click2Hold", &click_hold);
         ImGui::Unindent();
     }
 
@@ -2309,6 +2343,9 @@ void SettingsWindow()
         static int closenode = CloseNone;
 
         ImGui::Indent();
+        ImU32 bgcolor = ImColor(ImGui::SysWndBgColor);
+        if (ColorPicker("Background", bgcolor, -1.0f))
+            ImGui::SysWndBgColor = ImColor(bgcolor);
         ColorPicker("Pitch", plot_colors[PlotIdxPitch], -1.0f);
         ColorPicker("Tempo", plot_colors[PlotIdxTempo], -1.0f);
         ColorPicker("Metronome", plot_colors[PlotIdxMetronome], -1.0f);
@@ -2363,24 +2400,54 @@ void SettingsWindow()
 // Access from Dear ImGui Demo -> Tools -> About
 //-----------------------------------------------------------------------------
 
+void URLwidget(const char *URL, const char *text, const char *descr)
+{
+    if (ImGui::Link(text, URL))
+        ImGui::SysOpen(URL);
+    ImGui::SameLine(); ImGui::TextUnformatted(descr);
+}
+
 void ImGui::ShowAboutWindow(bool* p_open)
 {
     if (!HandlePopupState("About imVocalPitchMonitor", wnd_about, ImGui::GetMainViewport()->GetCenter(), ImVec2(0.5f, 0.5f)))
         return;
 
-    static const char* VocalPithMonitorURL = "https://play.google.com/store/apps/details?id=com.tadaoyamaoka.vocalpitchmonitor";
+    constexpr const char* VocalPithMonitorURL = "https://play.google.com/store/apps/details?id=com.tadaoyamaoka.vocalpitchmonitor";
+    constexpr const char* ImGuiURL = "https://github.com/ocornut/imgui";
+    constexpr const char* miniaudioURL = "https://miniaud.io";
+    constexpr const char* xiphURL = "https://xiph.org";
+    constexpr const char* fft4gURL = "https://github.com/YSRKEN/Ooura-FFT-Library-by-Other-Language";
+    constexpr const char* simpleiniURL = "https://github.com/brofield/simpleini";
+    constexpr const char* portable_file_dialogsURL = "https://github.com/samhocevar/portable-file-dialogs" ;
+    constexpr const char* DejaVuURL = "https://dejavu-fonts.github.io";
+    constexpr const char* Font_AwesomeURL = "https://fontawesome.com";
+
     ImGui::Text("imVocalPitchMonitor %s", VER_VERSION_DISPLAY);
     ImGui::Text("%s", VER_DATE_AUTHOR);
-    ImGui::TextUnformatted("Ported from*"); ImGui::SameLine();
+    ImGui::TextUnformatted("Port*");
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("All core features code is stolen from decompiled original apk.");
+        ImGui::SetTooltip("All core features code was stolen from decompiled original apk.");
+    ImGui::SameLine(); ImGui::TextUnformatted(" to PC of ");
+    ImGui::SameLine();
     if (ImGui::Link("VocalPitchMonitor", VocalPithMonitorURL))
-    {
         ImGui::SysOpen(VocalPithMonitorURL);
-    }; ImGui::SameLine();
-    ImGui::TextUnformatted("Android App");
+    ImGui::SameLine(); ImGui::TextUnformatted("Android app");
     ImGui::TextUnformatted("by Tadao Yamaoka.");
     ImGui::TextUnformatted("Without his hard work this project wouldn't be possible.");
+
+    ImGui::TextUnformatted("Other software used by this project:");
+    ImGui::Indent();
+    URLwidget(ImGuiURL, "ImGui",  "© Omar Cornut" );
+    URLwidget(miniaudioURL, "miniaudio",  "© David Reid" );
+ #if defined(HAVE_OPUS)
+    URLwidget(xiphURL, "libogg, opus, opusfile",  "© Xiph.Org Foundation" );
+ #endif // HAVE_OPUS
+    URLwidget(fft4gURL, "fft4g",  "© Takuya OOURA" );
+    URLwidget(simpleiniURL, "simpleini",  "© Brodie Thiesfield" );
+    URLwidget(portable_file_dialogsURL, "portable-file-dialogs",  "© Sam Hocevar" );
+    URLwidget(DejaVuURL, "DejaVu fonts",  "© DejaVu fonts team" );
+    URLwidget(Font_AwesomeURL, "Font Awesome",  "© Fonticons, Inc." );
+    ImGui::Unindent();
 
     static bool show_config_info = false;
     ImGui::Checkbox("Config/Build Information", &show_config_info);

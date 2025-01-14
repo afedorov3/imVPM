@@ -8,6 +8,9 @@ include(CMakePackageConfigHelpers)
 
 include_directories(../libogg/include ../opus/include)
 
+find_package(Ogg REQUIRED)
+find_package(Opus REQUIRED)
+
 set(OPUSFILE_HEADERS
     include/opusfile.h
 )

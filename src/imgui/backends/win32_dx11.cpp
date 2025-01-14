@@ -29,9 +29,10 @@ static ID3D11RenderTargetView*  g_mainRenderTargetView = nullptr;
 static HWND                     g_Window = nullptr;
 static UINT_PTR                 g_idGlobalRefreshTimer = 0;
 
-       ImRect                   ImGui::SysWinPos  = ImRect(100, 100, 1280, 800);
-       ImVec4                   ImGui::SysBgColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
-       bool                     ImGui::SysFocus = false;
+       ImRect                   ImGui::SysWndPos  = ImRect(100, 100, 1280, 800);
+       ImVec4                   ImGui::SysWndBgColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+       bool                     ImGui::SysWndFocus = false;
+       ImGui::WindowState       ImGui::SysWndState = ImGui::WSNormal;
        bool                     ImGui::AppExit = false;
        bool                     ImGui::AppReconfigure = false;
        ImU32                    ImGui::DPI = USER_DEFAULT_SCREEN_DPI;
@@ -100,7 +101,7 @@ int wmain(int argc, wchar_t** wargv)
     //ImGui_ImplWin32_EnableDpiAwareness();
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Example", nullptr };
     ::RegisterClassExW(&wc);
-    g_Window = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui main window", WS_OVERLAPPEDWINDOW, ImGui::SysWinPos.x, ImGui::SysWinPos.y, ImGui::SysWinPos.w, ImGui::SysWinPos.h, nullptr, nullptr, wc.hInstance, nullptr);
+    g_Window = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui main window", WS_OVERLAPPEDWINDOW, ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h, nullptr, nullptr, wc.hInstance, nullptr);
 
     // Initialize Direct3D
     if (!CreateDeviceD3D(g_Window))
@@ -111,7 +112,14 @@ int wmain(int argc, wchar_t** wargv)
     }
 
     // Show the window
-    ::ShowWindow(g_Window, SW_SHOWDEFAULT);
+    int cmdshow;
+    switch (ImGui::SysWndState)
+    {
+        case ImGui::WSMinimized: cmdshow = SW_SHOWMINIMIZED; break;
+        case ImGui::WSMaximized: cmdshow = SW_SHOWMAXIMIZED; break;
+        default: cmdshow = SW_SHOWDEFAULT;
+    }
+    ::ShowWindow(g_Window, cmdshow);
     ::UpdateWindow(g_Window);
 
     ImGui::DPI = (ImU32) GetDPI(g_Window);
@@ -194,10 +202,10 @@ int wmain(int argc, wchar_t** wargv)
         // Rendering
         ImGui::Render();
         const float clear_color_with_alpha[4] = {
-                                                    ImGui::SysBgColor.x * ImGui::SysBgColor.w,
-                                                    ImGui::SysBgColor.y * ImGui::SysBgColor.w,
-                                                    ImGui::SysBgColor.z * ImGui::SysBgColor.w,
-                                                    ImGui::SysBgColor.w
+                                                    ImGui::SysWndBgColor.x * ImGui::SysWndBgColor.w,
+                                                    ImGui::SysWndBgColor.y * ImGui::SysWndBgColor.w,
+                                                    ImGui::SysWndBgColor.z * ImGui::SysWndBgColor.w,
+                                                    ImGui::SysWndBgColor.w
                                                 };
         g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
         g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color_with_alpha);
@@ -300,14 +308,36 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         break;
     case WM_ACTIVATE:
-        ImGui::SysFocus = (bool)wParam;
+        ImGui::SysWndFocus = (bool)wParam;
         break;
-    case WM_SIZE:
-        if (wParam == SIZE_MINIMIZED)
-            return 0;
-        g_ResizeWidth = (UINT)LOWORD(lParam); // Queue resize
-        g_ResizeHeight = (UINT)HIWORD(lParam);
+    case WM_WINDOWPOSCHANGED:
+    {
+        WINDOWPOS *wp = (WINDOWPOS*)lParam;
+        LONG style = GetWindowLong(hWnd, GWL_STYLE);
+        if (style & WS_MAXIMIZE)
+            ImGui::SysWndState = ImGui::WSMaximized;
+        else if (style & WS_MINIMIZE)
+            ImGui::SysWndState = ImGui::WSMinimized;
+        else
+            ImGui::SysWndState = ImGui::WSNormal;
+        if (!(wp->flags & SWP_NOSIZE) && ImGui::SysWndState != ImGui::WSMinimized)
+        {
+            RECT rect;
+            GetClientRect(hWnd, &rect);
+            g_ResizeWidth = (UINT)rect.right; // Queue resize
+            g_ResizeHeight = (UINT)rect.bottom;
+        }
+        if (!(wp->flags & SWP_NOMOVE) || !(wp->flags & SWP_NOSIZE))
+        {
+            WINDOWPLACEMENT wpl;
+            GetWindowPlacement(hWnd, &wpl);
+            ImGui::SysWndPos.x = wpl.rcNormalPosition.left;
+            ImGui::SysWndPos.y = wpl.rcNormalPosition.top;
+            ImGui::SysWndPos.w = wpl.rcNormalPosition.right - wpl.rcNormalPosition.left;
+            ImGui::SysWndPos.h = wpl.rcNormalPosition.bottom - wpl.rcNormalPosition.top;
+        }
         return 0;
+    }
     case WM_SYSCOMMAND:
         if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
             return 0;
@@ -455,21 +485,14 @@ void ImGui::SysSetWindowTitle(const char *title)
     ::SetWindowTextW(g_Window, newtitle.get());
 }
 
+void ImGui::SysMinimize()
+{
+    ::PostMessage(g_Window, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+}
+
 void ImGui::SysMaximize()
 {
     ::PostMessage(g_Window, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
-}
-
-bool ImGui::SysIsMaximized()
-{
-    WINDOWPLACEMENT wp;
-    wp.length = sizeof(WINDOWPLACEMENT);
-    if (GetWindowPlacement(g_Window, &wp))
-    {
-        return (wp.showCmd == SW_SHOWMAXIMIZED);
-    }
-
-    return false;
 }
 
 void ImGui::SysRestore()
@@ -477,11 +500,10 @@ void ImGui::SysRestore()
     ::PostMessage(g_Window, WM_SYSCOMMAND, SC_RESTORE, 0);
 }
 
-// Execute file
-ImS32 ImGui::SysOpen(const char *path)
+ImS32 ImGui::SysOpen(const char *resource)
 {
-    auto wpath = utf8_to_wchar(path);
-    if (wpath == nullptr) return EINVAL;
+    auto wresource = utf8_to_wchar(resource);
+    if (wresource == nullptr) return EINVAL;
 
-    return ShellExecute2errno(::ShellExecuteW(g_Window, L"open", wpath.get(), nullptr, nullptr, SW_SHOWNORMAL));
+    return ShellExecute2errno(::ShellExecuteW(g_Window, L"open", wresource.get(), nullptr, nullptr, SW_SHOWNORMAL));
 }
