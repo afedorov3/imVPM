@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.27)
 project(imVocalPitchMonitor DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
 
-# build tools required: CMake, git, make/ninja, C++ compiler (Clang/GCC/MSVC are tested),
+# build tools required: CMake, git, make/ninja, C++11 compiler (Clang/GCC/MSVC are tested),
 #                       patch (on windows you'll get it with git),
 #                       Windows SDK and MSVC libs for windows build (the only supported option yet)
 
@@ -35,6 +35,8 @@ if (${PATCH} STREQUAL "PATCH-NOTFOUND")
 endif()
 
 option(BUILD_TESTING "" OFF)
+option(BUILD_EXAMPLE "" OFF)
+option(BUILD_TESTS "" OFF)
 
 include_directories(src)
 
@@ -53,6 +55,7 @@ set(OPUSFILE_BUILD ${CMAKE_BINARY_DIR}/_deps/opusfile-build)
 set(FFT4G_SRC ${CMAKE_BINARY_DIR}/_deps/fft4g-src/C++)
 set(SIMPLEINI_SRC ${CMAKE_BINARY_DIR}/_deps/simpleini-src)
 set(PFD_SRC ${CMAKE_BINARY_DIR}/_deps/pfd-src)
+set(POPL_SRC ${CMAKE_BINARY_DIR}/_deps/popl-src)
 
 include(FetchContent)
 
@@ -95,7 +98,13 @@ FetchContent_Declare(
   DOWNLOAD_EXTRACT_TIMESTAMP yes
 )
 
-FetchContent_MakeAvailable(imgui miniaudio fft4g simpleini pfd)
+FetchContent_Declare(
+  popl
+  GIT_REPOSITORY  https://github.com/badaix/popl.git
+  GIT_TAG         master
+)
+
+FetchContent_MakeAvailable(imgui miniaudio fft4g simpleini pfd popl)
 
 if (OPUS_SUPPORT)
   set(OP_DISABLE_HTTP "yes")
@@ -201,7 +210,7 @@ endif()
 ###
 add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp ${MINIAUDIO_SRC}/extras/stb_vorbis.c src/imgui/backends/${PM_BACKEND}_${PM_GRAPHICS}.cpp ${FFT4G_SRC}/fft4g.cpp ${IMGUI_SRC}/backends/imgui_impl_${PM_GRAPHICS}.cpp ${IMGUI_SRC}/backends/imgui_impl_${PM_BACKEND}.cpp ${IMGUI_SRC}/imgui.cpp ${IMGUI_SRC}/imgui_widgets.cpp ${IMGUI_SRC}/imgui_tables.cpp ${IMGUI_SRC}/imgui_draw.cpp)
 set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
-target_include_directories(imvpm PRIVATE src/imgui ${FFT4G_SRC} ${MINIAUDIO_SRC} ${IMGUI_SRC} ${IMGUI_SRC}/backends ${FONTS_SRC} ${PFD_SRC} ${SIMPLEINI_SRC})
+target_include_directories(imvpm PRIVATE src/imgui ${FFT4G_SRC} ${MINIAUDIO_SRC} ${IMGUI_SRC} ${IMGUI_SRC}/backends ${FONTS_SRC} ${PFD_SRC} ${SIMPLEINI_SRC} ${POPL_SRC}/include)
 if (OPUS_SUPPORT)
   target_compile_definitions(imvpm PRIVATE HAVE_OPUS)
   target_include_directories(imvpm PRIVATE ${OPUSFILE_SRC}/include)

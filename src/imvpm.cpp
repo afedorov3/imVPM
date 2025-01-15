@@ -79,6 +79,7 @@ Index of this file:
 
 #include <portable-file-dialogs.h>
 #include <SimpleIni.h>
+#include <popl.hpp>
 
 #define IMGUI_APP
 #include "imgui_local.h"
@@ -184,6 +185,7 @@ typedef std::string pathstr_t;
 //-----------------------------------------------------------------------------
 
 // CONSTANTS
+#define WINDOW_TITLE       "imVocalPitchMonitor" // window basic title
 #define CONFIG_FILENAME    "imvpmrc" // config file name
 #define FONT               Font      // symbol names that was given to binary_to_compressed_c when fonts.h being created
 #define FONT_NOTES         FontMono
@@ -501,8 +503,9 @@ static std::vector<double> f_peak_buf(TunerSmoothDef, -1.0);    // peak frequenc
 static size_t f_peak_buf_pos =        0;  // peak frequency averaging buffer position
 static pathstr_t config_file;             // path to config file
 static bool        ro_config = false;     // config file is read-only or can't be accessed
-static std::string last_played_file;      // path to last played file
-static std::string last_record_file;      // path to last recorded file
+static std::string last_file;             // path to last active file
+static std::string open_dir;             // directory of the last file open
+static std::string cmd_options;           // command line options help message
 
 typedef std::unique_ptr<pfd::open_file> unique_open_file;
 static unique_open_file open_file_dlg = nullptr; // open file dialog operation
@@ -699,63 +702,100 @@ void AddFmtTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawLis
 }
 
 // audio control wrappers
-void Stop()
+void inline Play(const char *file = nullptr)
 {
-    audiohandler.stop();
-    audiohandler.capture();
+    if (file && *file)
+        last_file = file;
 
-    if (ah_state.isRecording())
-        msg_log.LogMsg(LOG_INFO, "File recorded: %s", last_record_file.c_str());
-}
-
-void Play(const char *file = nullptr)
-{
     hold = false;
     audiohandler.stop();
     audiohandler.play(file);
+
+    std::stringstream title;
+    title << WINDOW_TITLE ": Playing " << last_file;
+    ImGui::SysSetWindowTitle(title.str().c_str());
 }
 
-void Record()
+void inline Seek(uint64_t seek_to)
 {
-    if (ah_state.isRecording()) {
-        Stop();
+    audiohandler.seek(seek_to);
+}
+
+void inline Capture()
+{
+    if (ah_state.isActive())
+        audiohandler.stop();
+    audiohandler.capture();
+
+    if (ah_state.isRecording())
+        msg_log.LogMsg(LOG_INFO, "File recorded: %s", last_file.c_str());
+
+    ImGui::SysSetWindowTitle(WINDOW_TITLE);
+}
+
+void inline Record(const char *file = nullptr)
+{
+    if (!file && ah_state.isRecording()) {
+        Capture();
         return;
     }
 
-    last_record_file = record_dir[0] ? record_dir : pfd::path::home();
-    last_record_file += pfd::path::separator();
-    char timeString[64];
-    std::time_t time = std::time({});
-    std::strftime(timeString, IM_ARRAYSIZE(timeString), "%Y%m%d_%H%M%S", std::localtime(&time));
-    last_record_file += timeString;
-    last_record_file += ".wav";
+    if (file)
+    {
+        last_file = file;
+
+        // if given filename has any extention other than .wav, replace it with .wav as miniaudio will encode as WAV anyway
+        for ( auto i = last_file.rbegin(); i != last_file.rend(); i++ )
+        {
+			if (*i == '\\' || *i == '/')
+				break;
+            else if (*i == '.')
+            {
+				last_file.resize(last_file.rend() - i - 1);
+                break;
+            }
+        }
+    }
+    else
+    {
+        last_file = record_dir[0] ? record_dir : pfd::path::home();
+        last_file += pfd::path::separator();
+        char timeString[64];
+        std::time_t time = std::time({});
+        std::strftime(timeString, IM_ARRAYSIZE(timeString), "%Y%m%d_%H%M%S", std::localtime(&time));
+        last_file += timeString;
+    }
+
+    last_file += ".wav";
 
     hold = false;
     audiohandler.stop();
-    audiohandler.record(last_record_file.c_str());
+    audiohandler.record(last_file.c_str());
+
+    std::stringstream title;
+    title << WINDOW_TITLE ": Recording " << last_file;
+    ImGui::SysSetWindowTitle(title.str().c_str());
 }
 
-void Pause()
+void inline Pause()
 {
     if (ah_state.canPause())
         audiohandler.pause();
 }
 
-void Resume()
+void inline Resume()
 {
+    hold = false;
     if (ah_state.canResume())
-    {
-        hold = false;
         audiohandler.resume();
-    }
 }
 
-void ToggleHold()
+void inline ToggleHold()
 {
     hold = !hold;
 }
 
-void TogglePause()
+void inline TogglePause()
 {
     if (!ah_state.isPlaying())
         return ToggleHold();
@@ -769,13 +809,18 @@ void TogglePause()
     }
 }
 
-void ToggleMute()
+void inline AdjustVolume()
 {
-    mute = !mute;
     audiohandler.setPlaybackVolumeFactor(mute ? 0 : play_volume);
 }
 
-void ToggleFullscreen()
+void inline ToggleMute()
+{
+    mute = !mute;
+    AdjustVolume();
+}
+
+void inline ToggleFullscreen()
 {
     if (ImGui::SysWndState == ImGui::WSMaximized)
         ImGui::SysRestore();
@@ -785,14 +830,7 @@ void ToggleFullscreen()
 
 void OpenAudioFile()
 {
-    std::string path;
-
-    auto sep = last_played_file.rfind(pfd::path::separator());
-    if (sep == std::string::npos)
-        path = pfd::path::home();
-    else
-        path = last_played_file.substr(0, sep);
-    open_file_dlg = unique_open_file(new pfd::open_file("Open file for playback", path,
+    open_file_dlg = unique_open_file(new pfd::open_file("Open file for playback", !open_dir.empty() ? open_dir : pfd::path::home(),
                             { "Audio files (.wav .mp3 .ogg .flac"
  #if defined(HAVE_OPUS)
                             " .opus"
@@ -930,8 +968,6 @@ bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, s
 #define GETVAL(sec, var, ...) GetIniValue(ini, sec, #var, var VA_ARGS(__VA_ARGS__))
 void LoadSettings()
 {
-    CSimpleIniA ini(true /* Unicode */);
-
     config_file = GetConfigPath();
 
     if (!config_file.empty())
@@ -944,6 +980,7 @@ void LoadSettings()
             ro_config = true;
  #endif
 
+        CSimpleIniA ini(true /* Unicode */);
         if (ini.LoadFile(config_file.c_str()) == SI_OK)
         {
             GETVAL("imvpm", first_run);
@@ -974,10 +1011,9 @@ void LoadSettings()
             GETVAL("imvpm", play_volume, 0.0f, 1.0f);
             GETVAL("imvpm", mute);
             GETVAL("imvpm", scale_str, (const char**)scale_list, IM_ARRAYSIZE(scale_list));
-            GETVAL("imvpm", record_dir, IM_ARRAYSIZE(record_dir));
             {
                 int size;
-                if (GetIniValue(ini, "imvpm", "f_peak_buf_sz", size, TunerSmoothMin, TunerSmoothMax))
+                if (GetIniValue(ini, "imvpm", "f_peak_smooth", size, TunerSmoothMin, TunerSmoothMax))
                     UpdatePeakBuf(size);
             }
             {
@@ -988,34 +1024,40 @@ void LoadSettings()
                     GetIniValue(ini, "imvpm", key, (int&)plot_colors[i], INT_MIN, INT_MAX);
                 }
             }
-        }
-    }
-    {
-        int ival;
-        if (GetIniValue(ini, "imvpm", "wnd_bg_color", ival, INT_MIN, INT_MAX))
-            ImGui::SysWndBgColor = ImColor((ImU32)ival);
-        const char *pv = ini.GetValue("imvpm", "wnd_pos");
-        if (pv)
-        {
-            ImRect winpos;
-            char *end;
-            int i;
-            for (i = 0; i < 4; i++, pv = end)
             {
-                ImS32 val = strtol(pv, &end, 0);
-                if (*end != ' ' && *end != '\0')
-                    break;
-                reinterpret_cast<ImS32*>(&winpos.x)[i] = val; // yacky
+                int ival;
+                if (GetIniValue(ini, "imvpm", "wnd_bg_color", ival, INT_MIN, INT_MAX))
+                    ImGui::SysWndBgColor = ImColor((ImU32)ival);
+                const char *pv = ini.GetValue("imvpm", "wnd_pos");
+                if (pv)
+                {
+                    ImRect winpos;
+                    char *end;
+                    int i;
+                    for (i = 0; i < 4; i++, pv = end)
+                    {
+                        ImS32 val = strtol(pv, &end, 0);
+                        if (*end != ' ' && *end != '\0')
+                            break;
+                        reinterpret_cast<ImS32*>(&winpos.x)[i] = val; // yacky
+                    }
+                    if (i == 4)
+                        ImGui::SysWndPos = winpos;
+                }
+                GetIniValue(ini, "imvpm", "wnd_state", (int&)ImGui::SysWndState, ImGui::WSNormal, ImGui::WSMaximized);
             }
-            if (i == 4)
-                ImGui::SysWndPos = winpos;
+            GETVAL("imvpm", record_dir, IM_ARRAYSIZE(record_dir));
+            {
+                const char *pv = ini.GetValue("imvpm", "open_dir");
+                if (pv)
+                    open_dir = pv;
+            }
         }
-        GetIniValue(ini, "imvpm", "wnd_state", (int&)ImGui::SysWndState, ImGui::WSNormal, ImGui::WSMaximized);
     }
 
     UpdateCalibration();
     UpdateScale();
-    audiohandler.setPlaybackVolumeFactor(mute ? 0 : play_volume);
+    AdjustVolume();
 
     if (first_run && !record_dir[0])
     {
@@ -1063,10 +1105,9 @@ void SaveSettings()
     SETVAL ("imvpm", play_volume, "%0.3f");
     SETBOOL("imvpm", mute);
     ini.SetValue("imvpm", "scale_str", scale_str.c_str());
-    ini.SetValue("imvpm", "record_dir", record_dir);
     {
-        size_t f_peak_buf_sz = f_peak_buf.size();
-        SETVAL ("imvpm", f_peak_buf_sz, "%zu");
+        size_t f_peak_smooth = f_peak_buf.size();
+        SETVAL ("imvpm", f_peak_smooth, "%zu");
     }
     {
         char key[64];
@@ -1086,6 +1127,10 @@ void SaveSettings()
     ini.SetValue("imvpm", "wnd_pos", sval);
     sprintf_s(sval, IM_ARRAYSIZE(sval), "%d", (int)ImGui::SysWndState);
     ini.SetValue("imvpm", "wnd_state", sval);
+    if (record_dir[0])
+        ini.SetValue("imvpm", "record_dir", record_dir);
+    if (!open_dir.empty())
+        ini.SetValue("imvpm", "open_dir", open_dir.c_str());
 
     ini.SaveFile(config_file.c_str());
 }
@@ -1121,11 +1166,11 @@ void ResetSettings()
     plot_colors = DefaultPlotColors;
     play_volume = 1.0f;
     mute = false;
-    audiohandler.setPlaybackVolumeFactor(play_volume);
 
     UpdatePeakBuf(TunerSmoothDef);
     UpdateCalibration();
     UpdateScale();
+    AdjustVolume();
 }
 
 bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault])
@@ -1209,15 +1254,41 @@ int ImGui::AppInit(int argc, char const *const* argv)
     if (!pfd::settings::available())
         msg_log.LogMsg(LOG_WARN, "portable-file-dialogs is unavailable on this platform, file dialogs ceased");
 
-    if (argc > 1)
+    popl::OptionParser op("opts");
+    auto capture_option     = op.add<popl::Value<std::string>>("i", "capture", "capture device");
+    auto playback_option    = op.add<popl::Value<std::string>>("o", "playback", "playback device");
+    auto record_option      = op.add<popl::Switch>("r", "record", "start recording");
+    auto verbose_option     = op.add<popl::Switch>("v", "verbose", "enable debug log");
+    // save help text for About window
     {
-        audiohandler.play(argv[1]);
+        std::stringstream ss;
+        ss << "imvpm [opts] [file]\n" << op;
+        cmd_options = ss.str();
     }
-    else
+
+    try
     {
-        audiohandler.setPreferredCaptureDevice("mic");
-        audiohandler.capture();
+        op.parse(argc, argv);
+
+        if (capture_option->is_set())
+            audiohandler.setPreferredCaptureDevice(capture_option->value().c_str());
+        if (playback_option->is_set())
+            audiohandler.setPreferredPlaybackDevice(capture_option->value().c_str());
+        if (verbose_option->is_set())
+            msg_log.SetLevel(LOG_DBG);
+
+        if (record_option->is_set())
+            Record(op.non_option_args().size() && !op.non_option_args()[0].empty() ? op.non_option_args()[0].c_str() : nullptr);
+        else if (op.non_option_args().size() && !op.non_option_args()[0].empty())
+            Play(op.non_option_args()[0].c_str());
+        else
+            Capture();
     }
+    catch(const popl::invalid_option& e)
+    {
+		msg_log.LogMsg(LOG_ERR, "Invalid option: %s", e.what());
+    }
+	catch (const std::exception& e) {}
 
     return 0;
 }
@@ -1237,7 +1308,7 @@ int ImGui::AppInit(int argc, char const *const* argv)
 } while(0)
 bool ImGui::AppConfig()
 {
-    ImGui::SysSetWindowTitle("imVocalPitchMonitor");
+    ImGui::SysSetWindowTitle(WINDOW_TITLE);
 
     scale = (float)ImGui::DPI / (float)ImGui::defaultDPI;
 
@@ -1282,10 +1353,7 @@ bool ImGui::AppConfig()
     };
     static const ImWchar ranges_notes[] =
     {
-        0x0020, 0x0020, // space
-        0x0030, 0x0039, // 0~9
-        0x0041, 0x005A, // A~Z
-        0x0061, 0x007A, // a~z
+        0x0020, 0x007F, // Basic Latin
         0x266D, 0x266F, // ♭, ♯
         0,
     };
@@ -1365,7 +1433,9 @@ void ImGui::AppNewFrame()
         if (files.size() > 0)
         {
             Play(files[0].c_str());
-            last_played_file = files[0];
+            auto sep = files[0].rfind(pfd::path::separator());
+            if (sep != std::string::npos)
+                open_dir = files[0].substr(0, sep);
         }
         open_file_dlg = nullptr;
     }
@@ -1392,7 +1462,7 @@ void ImGui::AppNewFrame()
             {
                 restart_at = 0.0;
                 tries++;
-                audiohandler.capture();
+                Capture();
             }
         }
     }
@@ -1405,7 +1475,7 @@ void ImGui::AppNewFrame()
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->Pos);
     ImGui::SetNextWindowSize(ImGui::GetMainViewport()->Size);
     // Body of the main window starts here.
-    if (ImGui::Begin("imVocalPitchMonitor", nullptr,
+    if (ImGui::Begin(WINDOW_TITLE, nullptr,
         ImGuiWindowFlags_AlwaysAutoResize
         | ImGuiWindowFlags_NoDecoration
         | ImGuiWindowFlags_NoBackground
@@ -1593,9 +1663,9 @@ void PlaybackDevices()
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
         if (ImGui::SliderFloat("##VolumeControl", &vol, 0.0f, 100.0f, "Volume %.0f%%"))
         {
-            // update settings as well
-            audiohandler.setPlaybackVolumeFactor(play_volume = vol / 100.0f);
+            play_volume = vol / 100.0f;
             mute = false;
+            AdjustVolume();
         }
 
         ImGui::EndPopup();
@@ -1605,12 +1675,18 @@ void PlaybackDevices()
 
 void AudioControl()
 {
+    // align cursor to pixel boundary for record dot to align properly
+    ImVec2 pos = ImGui::GetCursorPos();
+    pos.x = std::roundf(pos.x);
+    pos.y = std::roundf(pos.y);
+    ImGui::SetCursorPos(pos);
+
     // stop button
     bool can_stop = ah_state.isPlaying() || ah_state.isRecording();
     if (!can_stop)
         ImGui::BeginDisabled();
     if (ButtonWidget(ICON_FA_CIRCLE_STOP))
-        Stop();
+        Capture();
     if (!can_stop)
         ImGui::EndDisabled();
 
@@ -1790,7 +1866,7 @@ void PlaybackProgress()
         uint64_t seek_to = IM_CLAMP(uint64_t(mouse_pos.x / size.x * ah_len), 0, ah_len);
         ImGui::SetTooltip(audiohandler.framesToTime(seek_to).c_str());
         if (seek && ah_state.canSeek())
-            audiohandler.seek(seek_to);
+            Seek(seek_to);
     }
 }
 
@@ -2457,6 +2533,7 @@ void ImGui::ShowAboutWindow(bool* p_open)
     constexpr const char* fft4gURL = "https://github.com/YSRKEN/Ooura-FFT-Library-by-Other-Language";
     constexpr const char* simpleiniURL = "https://github.com/brofield/simpleini";
     constexpr const char* portable_file_dialogsURL = "https://github.com/samhocevar/portable-file-dialogs" ;
+    constexpr const char* poplURL = "https://github.com/badaix/popl";
     constexpr const char* DejaVuURL = "https://dejavu-fonts.github.io";
     constexpr const char* Font_AwesomeURL = "https://fontawesome.com";
 
@@ -2483,8 +2560,15 @@ void ImGui::ShowAboutWindow(bool* p_open)
     URLwidget(fft4gURL, "fft4g",  "© Takuya OOURA" );
     URLwidget(simpleiniURL, "simpleini",  "© Brodie Thiesfield" );
     URLwidget(portable_file_dialogsURL, "portable-file-dialogs",  "© Sam Hocevar" );
+    URLwidget(poplURL, "Program Options Parser Library",  "© Johannes Pohl" );
     URLwidget(DejaVuURL, "DejaVu fonts",  "© DejaVu fonts team" );
     URLwidget(Font_AwesomeURL, "Font Awesome",  "© Fonticons, Inc." );
+    ImGui::Unindent();
+    ImGui::TextUnformatted("Command line options:");
+    ImGui::Indent();
+    ImGui::PushFont(font_grid);
+    ImGui::TextUnformatted(cmd_options.c_str());
+    ImGui::PopFont();
     ImGui::Unindent();
 
     static bool show_config_info = false;
