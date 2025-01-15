@@ -193,7 +193,7 @@ typedef std::string pathstr_t;
 static constexpr float    font_def_sz = 20.0f;  // default font size, px
 static constexpr float   font_icon_sz = 16.0f;  // default font icon size, px
 static constexpr float font_widget_sz = 28.0f;  // widget icons size, px
-static constexpr float   font_grid_sz = 18.0f;  // grid font size, px
+static constexpr float   font_grid_sz = 20.0f;  // grid font size, px
 static constexpr float  font_pitch_sz = 36.0f;  // pitch font size, px
 static constexpr float  font_tuner_sz = 16.0f;  // tuner font size, px
 static constexpr float     rul_margin = 4.0f;   // ruler label margin, px
@@ -219,7 +219,7 @@ static constexpr const float   lut_linew[] = { // plot features line widths
                                 // tempo:    normal  meter
                                                0.5f, 2.0f,
                                 // plot data: pitch
-                                               1.2f
+                                               1.5f
                                              };
 
 // orig palette
@@ -722,9 +722,11 @@ void inline Seek(uint64_t seek_to)
 
 void inline Capture()
 {
-    if (ah_state.isActive())
+    if (!ah_state.isCapturing())
+    {
         audiohandler.stop();
-    audiohandler.capture();
+        audiohandler.capture();
+    }
 
     if (ah_state.isRecording())
         msg_log.LogMsg(LOG_INFO, "File recorded: %s", last_file.c_str());
@@ -1172,10 +1174,12 @@ void ResetSettings()
     AdjustVolume();
 }
 
-bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault])
+bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault], bool disabled = false)
 {
     bool ret;
 
+    if (disabled)
+        ImGui::BeginDisabled();
     ImGui::PushFont(font_widget);
     ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor(color));
     ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
@@ -1184,6 +1188,8 @@ bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault])
     ret = ImGui::Button(text, widget_sz);
     ImGui::PopStyleColor(4);
     ImGui::PopFont();
+    if (disabled)
+        ImGui::EndDisabled();
 
     return ret;
 }
@@ -1449,7 +1455,7 @@ void ImGui::AppNewFrame()
         select_folder_dlg = nullptr;
     }
 
-    audiohandler.getState(ah_state, &ah_len, &ah_pos); // get handler state for a frame
+    audiohandler.getState(ah_state, &ah_len, &ah_pos); // cache handler state for a frame
 
     // if handler is idling try to restart after a grace period for some number of tries
     static double restart_at = 0.0;
@@ -1514,12 +1520,7 @@ void ImGui::AppNewFrame()
         {
             pos.x -= widget_sz.x + widget_margin;
             ImGui::SetCursorPos(pos);
-            ImGui::PushFont(font_widget);
-            ImGui::PushStyleColor(ImGuiCol_Text, GetColorU32(UI_colors[UIIdxDefault], 0.25f));
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(ICON_FA_HAND);
-            ImGui::PopStyleColor();
-            ImGui::PopFont();
+            ButtonWidget(ICON_FA_HAND, GetColorU32(UI_colors[UIIdxDefault], 0.5f), true);
         }
 
         // audio control
@@ -1693,22 +1694,26 @@ void AudioControl()
         ImGui::EndDisabled();
 
     // record button
+    bool can_record = !ah_state.isPlaying();
     ImGui::SameLine(0, widget_margin);
     // custom render the dot
     {
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         ImColor color = UI_colors[UIIdxRecord];
+        float mul = 1.0f - 0.5f * !can_record;
         if (ah_state.isRecording())
-        {
-            float mul = std::sinf((float)ImGui::GetTime() * (float)M_PI * 2.0f) * 0.2f + 0.8f;
-            color.Value.x *= mul;
-            color.Value.y *= mul;
-            color.Value.z *= mul;
-        }
+            mul *= std::sinf((float)ImGui::GetTime() * (float)M_PI * 2.0f) * 0.2f + 0.8f;
+        color.Value.x *= mul;
+        color.Value.y *= mul;
+        color.Value.z *= mul;
         draw_list->AddCircleFilled(ImGui::GetCursorPos() + widget_sz / 2, widget_sz.x * 0.15f, color);
     }
+    if (!can_record)
+        ImGui::BeginDisabled();
     if (ButtonWidget(ICON_FA_CIRCLE))
         Record();
+    if (!can_record)
+        ImGui::EndDisabled();
 
     // play / pause button
     ImGui::SameLine(0, widget_margin);
@@ -2560,14 +2565,17 @@ void ImGui::ShowAboutWindow(bool* p_open)
 
     ImGui::Text("imVocalPitchMonitor %s", VER_VERSION_DISPLAY);
     ImGui::Text("%s", VER_DATE_AUTHOR);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, -1.0f));
     ImGui::TextUnformatted("Port*");
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("All core features code was stolen from decompiled original apk.");
     ImGui::SameLine(); ImGui::TextUnformatted(" to PC of ");
     ImGui::SameLine();
+    ImGui::PopStyleVar();
     if (ImGui::Link("VocalPitchMonitor", VocalPithMonitorURL))
         ImGui::SysOpen(VocalPithMonitorURL);
-    ImGui::SameLine(); ImGui::TextUnformatted("Android app");
+    ImGui::SameLine();
+    ImGui::TextUnformatted("Android app");
     ImGui::TextUnformatted("by Tadao Yamaoka.");
     ImGui::TextUnformatted("Without his hard work this project wouldn't be possible.");
 
