@@ -17,6 +17,7 @@ namespace ImGui
 
     // Backend variables
     extern ImRect SysWndPos;                         // restored window position x, y, w, h
+    extern ImRect SysWndMinMax;                      // desired min (x,y) and max(w,h) window client area
     extern ImVec4 SysWndBgColor;                     // client window background color r, g, b, a
     extern bool SysWndFocus;                         // system window has focus
     extern WindowState SysWndState;                  // system window state

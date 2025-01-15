@@ -33,7 +33,6 @@
 
 /*
 TODO:
-    process command arguments
     drag panning
 */
 
@@ -1389,6 +1388,9 @@ bool ImGui::AppConfig()
     widget_margin = font_widget_sz * scale / 2.5;
     menu_spacing = 8.0f * scale;
 
+    ImGui::SysWndMinMax.x = (widget_sz.x + widget_margin) * 8;
+    ImGui::SysWndMinMax.y = (widget_sz.x + widget_margin) * 8;
+
     return true;
 }
 
@@ -1941,9 +1943,12 @@ bool ColorPicker(const char *label, ImU32 &color, float split)
 
 inline void InputControl()
 {
+    static bool mlblock = false;
+
     // Mouse
     if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered())
     {
+
         ImGuiIO &io  = ImGui::GetIO();
         ImVec2 wsize = ImGui::GetWindowSize();
 
@@ -1967,15 +1972,27 @@ inline void InputControl()
         }
 
         // vertical scroll
-        if (io.KeyMods == ImGuiMod_None && io.MouseWheel != 0.0f)
+        if (!mlblock && io.KeyMods == ImGuiMod_None && io.MouseWheel != 0.0f)
         {
             c_pos += io.MouseWheel * PlotYScrlSpd;
             y_ascrl_grace = ImGui::GetTime() + PlotAScrlGrace;
         }
 
-        if (click_hold && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-            TogglePause();
-    }
+        // left button
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+        {
+            c_pos += ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y / (y_zoom * font_grid_sz * scale / c_dist);
+            ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+            mlblock = true;
+        }
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+        {
+            if (!mlblock && click_hold)
+                TogglePause();
+            mlblock = false;
+        }
+    } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        mlblock = true;
 
     // Keyboard
     if (ImGui::IsWindowFocused())

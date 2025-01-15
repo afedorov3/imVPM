@@ -30,6 +30,7 @@ static HWND                     g_Window = nullptr;
 static UINT_PTR                 g_idGlobalRefreshTimer = 0;
 
        ImRect                   ImGui::SysWndPos  = ImRect(100, 100, 1280, 800);
+       ImRect                   ImGui::SysWndMinMax  = ImRect(0, 0, 0, 0);
        ImVec4                   ImGui::SysWndBgColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
        bool                     ImGui::SysWndFocus = false;
        ImGui::WindowState       ImGui::SysWndState = ImGui::WSNormal;
@@ -99,7 +100,7 @@ int wmain(int argc, wchar_t** wargv)
 
     // Create application window
     //ImGui_ImplWin32_EnableDpiAwareness();
-    WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Example", nullptr };
+    WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Main Window", nullptr };
     ::RegisterClassExW(&wc);
     g_Window = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui main window", WS_OVERLAPPEDWINDOW, ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h, nullptr, nullptr, wc.hInstance, nullptr);
 
@@ -310,6 +311,23 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_ACTIVATE:
         ImGui::SysWndFocus = (bool)wParam;
         break;
+    case WM_GETMINMAXINFO:
+    {
+        LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam;
+        RECT wr = { };
+        DWORD ret = AdjustWindowRectEx(&wr, WS_OVERLAPPEDWINDOW, FALSE, 0);
+        wr.right -= wr.left;
+        wr.bottom -= wr.top;
+        if (ImGui::SysWndMinMax.x)
+            lpMMI->ptMinTrackSize.x = ImGui::SysWndMinMax.x + wr.right;
+        if (ImGui::SysWndMinMax.y)
+            lpMMI->ptMinTrackSize.y = ImGui::SysWndMinMax.y + wr.bottom;
+        if (ImGui::SysWndMinMax.w)
+            lpMMI->ptMaxTrackSize.x = ImGui::SysWndMinMax.w + wr.right;
+        if (ImGui::SysWndMinMax.h)
+            lpMMI->ptMaxTrackSize.y = ImGui::SysWndMinMax.h + wr.bottom;
+        return 0;
+    }
     case WM_WINDOWPOSCHANGED:
     {
         WINDOWPOS *wp = (WINDOWPOS*)lParam;
