@@ -1388,8 +1388,8 @@ bool ImGui::AppConfig()
     widget_margin = font_widget_sz * scale / 2.5;
     menu_spacing = 8.0f * scale;
 
-    ImGui::SysWndMinMax.x = (widget_sz.x + widget_margin) * 8;
-    ImGui::SysWndMinMax.y = (widget_sz.x + widget_margin) * 8;
+    ImGui::SysWndMinMax.x = (widget_sz.x + widget_margin) * 10;
+    ImGui::SysWndMinMax.y = (widget_sz.x + widget_margin) * 10;
 
     return true;
 }
@@ -1983,6 +1983,7 @@ inline void InputControl()
         {
             c_pos += ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y / (y_zoom * font_grid_sz * scale / c_dist);
             ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+            y_ascrl_grace = ImGui::GetTime() + PlotAScrlGrace;
             mlblock = true;
         }
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
@@ -2008,6 +2009,9 @@ inline void InputControl()
 
         if (ImGui::IsKeyPressed(ImGuiKey_M, false))
             ToggleMute();
+
+        if (ImGui::IsKeyPressed(ImGuiKey_T, false))
+            ImGui::SysSetAlwaysOnTop(!ImGui::SysIsAlwaysOnTop());
     }
 }
 

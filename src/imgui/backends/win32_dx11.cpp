@@ -518,6 +518,16 @@ void ImGui::SysRestore()
     ::PostMessage(g_Window, WM_SYSCOMMAND, SC_RESTORE, 0);
 }
 
+bool ImGui::SysIsAlwaysOnTop()
+{
+    return !!(GetWindowLongW(g_Window, GWL_EXSTYLE) & WS_EX_TOPMOST);
+}
+
+void ImGui::SysSetAlwaysOnTop(bool set)
+{
+    SetWindowPos(g_Window, set ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOREDRAW | SWP_NOREPOSITION | SWP_NOSENDCHANGING | SWP_NOSIZE);
+}
+
 ImS32 ImGui::SysOpen(const char *resource)
 {
     auto wresource = utf8_to_wchar(resource);

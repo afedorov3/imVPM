@@ -40,5 +40,7 @@ namespace ImGui
     void SysMinimize();                              // minimize system window
     void SysMaximize();                              // maximize system window
     void SysRestore();                               // restore system window position
+    bool SysIsAlwaysOnTop();                         // window is always on top
+    void SysSetAlwaysOnTop(bool set);                // set/reset window topmost style
     ImS32 SysOpen(const char* resource);             // open object
 }
