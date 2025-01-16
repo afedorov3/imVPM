@@ -5,10 +5,6 @@ project(imVocalPitchMonitor DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES
 #                       patch (on windows you'll get it with git),
 #                       Windows SDK and MSVC libs for windows build (the only supported option yet)
 
-execute_process(
-  COMMAND ${CMAKE_COMMAND} -E echo ===== MAKE SURE you have git core.autocrlf set to false and core.eol set to lf =====
-)
-
 if (NOT DEFINED OPUS_SUPPORT)
   set(OPUS_SUPPORT "yes")
 endif()
@@ -40,104 +36,168 @@ option(BUILD_TESTS "" OFF)
 
 include_directories(src)
 
+if (VENDORED_BUILD)
+###### local dependencies
 
+  set(IMGUI_SRC ${CMAKE_SOURCE_DIR}/external/imgui)
+  set(MINIAUDIO_SRC ${CMAKE_SOURCE_DIR}/external/miniaudio)
+  set(LIBOGG_SRC ${CMAKE_SOURCE_DIR}/external/libogg)
+  set(LIBOGG_BUILD ${CMAKE_BINARY_DIR}/external/libogg)
+  set(OPUS_SRC ${CMAKE_SOURCE_DIR}/external/opus)
+  set(OPUS_BUILD ${CMAKE_BINARY_DIR}/external/opus)
+  set(OPUSFILE_SRC ${CMAKE_SOURCE_DIR}/external/opusfile)
+  set(OPUSFILE_BUILD ${CMAKE_BINARY_DIR}/opusfile)
+  set(FFT4G_SRC ${CMAKE_SOURCE_DIR}/external/fft4g/C++)
+  set(SIMPLEINI_SRC ${CMAKE_SOURCE_DIR}/external/simpleini)
+  set(PFD_SRC ${CMAKE_SOURCE_DIR}/external/pfd)
+  set(POPL_SRC ${CMAKE_SOURCE_DIR}/external/popl)
 
+  if (NOT EXISTS ${IMGUI_SRC})
+    message(FATAL_ERROR "ImGui sources not available (${IMGUI_SRC})")
+  endif()
+  if (NOT EXISTS ${MINIAUDIO_SRC})
+    message(FATAL_ERROR "miniaudio sources not available (${MINIAUDIO_SRC})")
+  endif()
+  if (NOT EXISTS ${FFT4G_SRC})
+    message(FATAL_ERROR "fft4g sources not available (${FFT4G_SRC})")
+  endif()
+  if (NOT EXISTS ${SIMPLEINI_SRC})
+    message(FATAL_ERROR "simpleini sources not available (${SIMPLEINI_SRC})")
+  endif()
+  if (NOT EXISTS ${PFD_SRC})
+    message(FATAL_ERROR "portable-file-dialogs sources not available (${PFD_SRC})")
+  endif()
+  if (NOT EXISTS ${POPL_SRC})
+    message(FATAL_ERROR "popl sources not available (${POPL_SRC})")
+  endif()
+
+  if (OPUS_SUPPORT)
+
+    if (NOT EXISTS ${LIBOGG_SRC})
+      message(FATAL_ERROR "libogg sources not available (${LIBOGG_SRC})")
+    endif()
+    if (NOT EXISTS ${OPUS_SRC})
+      message(FATAL_ERROR "opus sources not available (${OPUS_SRC})")
+    endif()
+    if (NOT EXISTS ${OPUSFILE_SRC})
+      message(FATAL_ERROR "opusfile sources not available (${OPUSFILE_SRC})")
+    endif()
+
+    # provide our CMake configuration for opusfile
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/assets/external/opusfile/CMakeLists.txt ${OPUSFILE_SRC}/CMakeLists.txt
+    )
+
+    set(OP_DISABLE_HTTP "yes")
+    set(OP_DISABLE_EXAMPLES "yes")
+    set(OP_DISABLE_DOCS "yes")
+
+    add_subdirectory(${LIBOGG_SRC} EXCLUDE_FROM_ALL)
+    add_subdirectory(${OPUS_SRC} EXCLUDE_FROM_ALL)
+    add_subdirectory(${OPUSFILE_SRC} EXCLUDE_FROM_ALL)
+
+  endif()
+
+###### /local dependencies
+else()
 ###### FetchContent
 
-set(IMGUI_SRC ${CMAKE_BINARY_DIR}/_deps/imgui-src)
-set(MINIAUDIO_SRC ${CMAKE_BINARY_DIR}/_deps/miniaudio-src)
-set(LIBOGG_SRC ${CMAKE_BINARY_DIR}/_deps/libogg-src)
-set(LIBOGG_BUILD ${CMAKE_BINARY_DIR}/_deps/libogg-build)
-set(OPUS_SRC ${CMAKE_BINARY_DIR}/_deps/opus-src)
-set(OPUS_BUILD ${CMAKE_BINARY_DIR}/_deps/opus-build)
-set(OPUSFILE_SRC ${CMAKE_BINARY_DIR}/_deps/opusfile-src)
-set(OPUSFILE_BUILD ${CMAKE_BINARY_DIR}/_deps/opusfile-build)
-set(FFT4G_SRC ${CMAKE_BINARY_DIR}/_deps/fft4g-src/C++)
-set(SIMPLEINI_SRC ${CMAKE_BINARY_DIR}/_deps/simpleini-src)
-set(PFD_SRC ${CMAKE_BINARY_DIR}/_deps/pfd-src)
-set(POPL_SRC ${CMAKE_BINARY_DIR}/_deps/popl-src)
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E echo ===== MAKE SURE you have git core.autocrlf set to false and core.eol set to lf =====
+  )
 
-include(FetchContent)
+  set(IMGUI_SRC ${CMAKE_BINARY_DIR}/_deps/imgui-src)
+  set(MINIAUDIO_SRC ${CMAKE_BINARY_DIR}/_deps/miniaudio-src)
+  set(LIBOGG_SRC ${CMAKE_BINARY_DIR}/_deps/libogg-src)
+  set(LIBOGG_BUILD ${CMAKE_BINARY_DIR}/_deps/libogg-build)
+  set(OPUS_SRC ${CMAKE_BINARY_DIR}/_deps/opus-src)
+  set(OPUS_BUILD ${CMAKE_BINARY_DIR}/_deps/opus-build)
+  set(OPUSFILE_SRC ${CMAKE_BINARY_DIR}/_deps/opusfile-src)
+  set(OPUSFILE_BUILD ${CMAKE_BINARY_DIR}/_deps/opusfile-build)
+  set(FFT4G_SRC ${CMAKE_BINARY_DIR}/_deps/fft4g-src/C++)
+  set(SIMPLEINI_SRC ${CMAKE_BINARY_DIR}/_deps/simpleini-src)
+  set(PFD_SRC ${CMAKE_BINARY_DIR}/_deps/pfd-src)
+  set(POPL_SRC ${CMAKE_BINARY_DIR}/_deps/popl-src)
 
-execute_process(
-  COMMAND ${CMAKE_COMMAND} -E echo Downloading external dependencies...
-)
+  include(FetchContent)
 
-FetchContent_Declare(
-  imgui
-  GIT_REPOSITORY  https://github.com/ocornut/imgui.git
-  GIT_TAG         master
-  DOWNLOAD_EXTRACT_TIMESTAMP yes
-)
-
-FetchContent_Declare(
-  miniaudio
-  GIT_REPOSITORY  https://github.com/mackron/miniaudio.git
-  GIT_TAG         master
-  DOWNLOAD_EXTRACT_TIMESTAMP yes
-)
-
-FetchContent_Declare(
-  fft4g
-  GIT_REPOSITORY  https://github.com/YSRKEN/Ooura-FFT-Library-by-Other-Language.git
-  GIT_TAG         master
-  DOWNLOAD_EXTRACT_TIMESTAMP yes
-)
-
-FetchContent_Declare(
-  simpleini
-  GIT_REPOSITORY  https://github.com/brofield/simpleini.git
-  GIT_TAG         master
-  DOWNLOAD_EXTRACT_TIMESTAMP yes
-)
-
-FetchContent_Declare(
-  pfd
-  GIT_REPOSITORY  https://github.com/samhocevar/portable-file-dialogs.git
-  GIT_TAG         main
-  DOWNLOAD_EXTRACT_TIMESTAMP yes
-)
-
-FetchContent_Declare(
-  popl
-  GIT_REPOSITORY  https://github.com/badaix/popl.git
-  GIT_TAG         master
-)
-
-FetchContent_MakeAvailable(imgui miniaudio fft4g simpleini pfd popl)
-
-if (OPUS_SUPPORT)
-  set(OP_DISABLE_HTTP "yes")
-  set(OP_DISABLE_EXAMPLES "yes")
-  set(OP_DISABLE_DOCS "yes")
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E echo Downloading external dependencies...
+  )
 
   FetchContent_Declare(
-    libogg
-    GIT_REPOSITORY  https://github.com/xiph/ogg.git
+    imgui
+    GIT_REPOSITORY  https://github.com/ocornut/imgui.git
     GIT_TAG         master
     DOWNLOAD_EXTRACT_TIMESTAMP yes
   )
+
   FetchContent_Declare(
-    opus
-    GIT_REPOSITORY  https://github.com/xiph/opus.git
+    miniaudio
+    GIT_REPOSITORY  https://github.com/mackron/miniaudio.git
+    GIT_TAG         master
+    DOWNLOAD_EXTRACT_TIMESTAMP yes
+  )
+
+  FetchContent_Declare(
+    fft4g
+    GIT_REPOSITORY  https://github.com/YSRKEN/Ooura-FFT-Library-by-Other-Language.git
+    GIT_TAG         master
+    DOWNLOAD_EXTRACT_TIMESTAMP yes
+  )
+
+  FetchContent_Declare(
+    simpleini
+    GIT_REPOSITORY  https://github.com/brofield/simpleini.git
+    GIT_TAG         master
+    DOWNLOAD_EXTRACT_TIMESTAMP yes
+  )
+
+  FetchContent_Declare(
+    pfd
+    GIT_REPOSITORY  https://github.com/samhocevar/portable-file-dialogs.git
     GIT_TAG         main
     DOWNLOAD_EXTRACT_TIMESTAMP yes
   )
-  set(OGG_LIBRARY ${LIBOGG_BUILD}/ogg)
-  set(OGG_INCLUDE_DIR ${LIBOGG_SRC}/include)
-  set(OPUS_LIBRARY ${OPUS_BUILD}/opus)
-  set(OPUS_INCLUDE_DIR ${OPUS_SRC}/include)
+
   FetchContent_Declare(
-    opusfile
-    GIT_REPOSITORY  https://github.com/xiph/opusfile.git
+    popl
+    GIT_REPOSITORY  https://github.com/badaix/popl.git
     GIT_TAG         master
-    DOWNLOAD_EXTRACT_TIMESTAMP yes
   )
 
-  FetchContent_MakeAvailable(libogg opus opusfile)
-endif()
+  FetchContent_MakeAvailable(imgui miniaudio fft4g simpleini pfd popl)
+
+  if (OPUS_SUPPORT)
+    set(OP_DISABLE_HTTP "yes")
+    set(OP_DISABLE_EXAMPLES "yes")
+    set(OP_DISABLE_DOCS "yes")
+
+    FetchContent_Declare(
+      libogg
+      GIT_REPOSITORY  https://github.com/xiph/ogg.git
+      GIT_TAG         master
+      DOWNLOAD_EXTRACT_TIMESTAMP yes
+    )
+    FetchContent_Declare(
+      opus
+      GIT_REPOSITORY  https://github.com/xiph/opus.git
+      GIT_TAG         main
+      DOWNLOAD_EXTRACT_TIMESTAMP yes
+    )
+    FetchContent_Declare(
+      opusfile
+      GIT_REPOSITORY  https://github.com/xiph/opusfile.git
+      GIT_TAG         master
+      DOWNLOAD_EXTRACT_TIMESTAMP yes
+    )
+
+    FetchContent_MakeAvailable(libogg opus opusfile)
+
+  endif()
 
 ###### /FetchContent
+endif()
 
 
 
@@ -146,15 +206,6 @@ set(FONTS_SRC ${CMAKE_SOURCE_DIR}/external/fonts)
 ###
 ### prepare sources
 ###
-if (OPUS_SUPPORT)
-  # if opusfile lacks CMake configuration, provide ours and configure
-  if(NOT EXISTS ${OPUSFILE_SRC}/CMakeLists.txt)
-    execute_process(
-        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/assets/external/opusfile/CMakeLists.txt ${OPUSFILE_SRC}/CMakeLists.txt
-    )
-    add_subdirectory(${OPUSFILE_SRC})
-  endif()
-endif()
 
 if(${PM_GRAPHICS} STREQUAL "dx11")
   execute_process(
@@ -213,9 +264,7 @@ set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
 target_include_directories(imvpm PRIVATE src/imgui ${FFT4G_SRC} ${MINIAUDIO_SRC} ${IMGUI_SRC} ${IMGUI_SRC}/backends ${FONTS_SRC} ${PFD_SRC} ${SIMPLEINI_SRC} ${POPL_SRC}/include)
 if (OPUS_SUPPORT)
   target_compile_definitions(imvpm PRIVATE HAVE_OPUS)
-  target_include_directories(imvpm PRIVATE ${OPUSFILE_SRC}/include)
-  link_directories(${LIBOGG_BUILD} ${OPUS_BUILD} ${OPUSFILE_BUILD})
-  target_link_libraries(imvpm opusfile ogg opus)
+  target_link_libraries(imvpm PRIVATE OpusFile::opusfile)
 endif()
 
 ###
@@ -246,14 +295,14 @@ endif()
 ### GUI dependencies
 ###
 if(${PM_BACKEND} STREQUAL "win32")
-  target_link_libraries(imvpm Dwmapi)
+  target_link_libraries(imvpm PRIVATE Dwmapi)
 elseif(${PM_BACKEND} STREQUAL "sdl2")
   include_directories(/usr/include/SDL2)
-  target_link_libraries(imvpm SDL2)
+  target_link_libraries(imvpm PRIVATE SDL2)
 endif()
 
 if(${PM_GRAPHICS} STREQUAL "opengl3")
-  target_link_libraries(imvpm OpenGL)
+  target_link_libraries(imvpm PRIVATE OpenGL)
 elseif(${PM_GRAPHICS} STREQUAL "dx11")
-  target_link_libraries(imvpm d3d11 d3dcompiler)
+  target_link_libraries(imvpm PRIVATE d3d11 d3dcompiler)
 endif()

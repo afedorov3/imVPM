@@ -707,10 +707,6 @@ void inline Play(const char *file = nullptr)
     hold = false;
     audiohandler.stop();
     audiohandler.play(file);
-
-    std::stringstream title;
-    title << WINDOW_TITLE ": Playing " << last_file;
-    ImGui::SysSetWindowTitle(title.str().c_str());
 }
 
 void inline Seek(uint64_t seek_to)
@@ -725,11 +721,6 @@ void inline Capture()
         audiohandler.stop();
         audiohandler.capture();
     }
-
-    if (ah_state.isRecording())
-        msg_log.LogMsg(LOG_INFO, "File recorded: %s", last_file.c_str());
-
-    ImGui::SysSetWindowTitle(WINDOW_TITLE);
 }
 
 void inline Record(const char *file = nullptr)
@@ -770,10 +761,6 @@ void inline Record(const char *file = nullptr)
     hold = false;
     audiohandler.stop();
     audiohandler.record(last_file.c_str());
-
-    std::stringstream title;
-    title << WINDOW_TITLE ": Recording " << last_file;
-    ImGui::SysSetWindowTitle(title.str().c_str());
 }
 
 void inline Pause()
@@ -1229,6 +1216,7 @@ inline bool ShowWindow(WndState &state)
 // [SECTION] Backend callbacks
 //-----------------------------------------------------------------------------
 
+// AudioHandler
 void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData, uint32_t frameCount, void *userData)
 {
     if (hold)
@@ -1246,6 +1234,33 @@ void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData,
     }
 }
 
+void eventCb(const AudioHandler::Notification &notification, void *userData)
+{
+    std::stringstream title;
+
+    switch(notification.event)
+    {
+        case AudioHandler::EventPlayFile:
+            title << WINDOW_TITLE ": Playing " << notification.dataStr;
+            ImGui::SysSetWindowTitle(title.str().c_str());
+            break;
+        case AudioHandler::EventRecordFile:
+            title << WINDOW_TITLE ": Recording " << notification.dataStr;
+            ImGui::SysSetWindowTitle(title.str().c_str());
+            break;
+        case AudioHandler::EventResume:
+            if (notification.dataU64 != AudioHandler::EventOpCapture)
+                break;
+            // fall through
+        default:
+        case AudioHandler::EventStop:
+            ImGui::SysSetWindowTitle(WINDOW_TITLE);
+            if (notification.dataU64 == AudioHandler::EventOpRecord)
+                msg_log.LogMsg(LOG_INFO, "File recorded: %s", last_file.c_str());
+    }
+}
+
+// ImGui
 int ImGui::AppInit(int argc, char const *const* argv)
 {
     msg_log.SetLevel(LOG_INFO);
@@ -1253,6 +1268,11 @@ int ImGui::AppInit(int argc, char const *const* argv)
     LoadSettings();
 
     audiohandler.attachFrameDataCb(sampleCb, nullptr);
+    audiohandler.attachNotificationCb(AudioHandler::EventPlayFile
+                                    | AudioHandler::EventRecordFile
+                                    | AudioHandler::EventResume
+                                    | AudioHandler::EventStop,
+                                      eventCb);
     audiohandler.setPlaybackEOFaction(AudioHandler::CmdCapture);
     audiohandler.setUpdatePlaybackFileName(true);
     audiohandler.enumerate();

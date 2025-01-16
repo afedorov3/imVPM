@@ -97,7 +97,8 @@ public:
         EventSeek       = 0x04,
         EventPause      = 0x08,
         EventResume     = 0x10,
-        EventStop       = 0x20
+        EventStop       = 0x20,
+        AllEvents       = EventPlayFile | EventRecordFile | EventSeek | EventPause | EventResume | EventStop
     };
     enum NotificationEventOp {
         EventOpNone,
@@ -320,8 +321,8 @@ public:
     //   notification: struct providing notification context
     //   userData:   userData pointer provided to attachNotificationCb()
     // data provided to the callback function:
-    //   EventPlayFile:   dataStr - file name opened for reading
-    //   EventRecordFile: dataStr - file name opened for writing
+    //   EventPlayFile:   dataStr - file opened for reading
+    //   EventRecordFile: dataStr - file opened for writing
     //   EventSeek:       dataStr - currently playing file name, dataU64 - cursor position set
     //   EventPause:      dataStr - name of the paused device, or "default" if unknown/not enumerated, dataU64 - NotificationEventOp
     //   EventResume:     dataStr - name of the resumed device, or "default" if unknown/not enumerated, dataU64 - NotificationEventOp

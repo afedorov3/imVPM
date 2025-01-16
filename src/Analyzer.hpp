@@ -201,8 +201,6 @@ private:
 #ifdef ANALYZER_INTERPOLATION
     inline double parabolic(const double *data, size_t x)
     {
-        int x_adjusted;
-
         if (x < 1 || x >= FFTSIZE - 1)
             return (double)x;
 
@@ -375,5 +373,5 @@ const size_t Analyzer::ANALYZE_INTERVAL = (size_t)((double)(ANALYZER_SAMPLE_FREQ
 const size_t Analyzer::PITCH_BUF_SIZE = (ANALYZER_ANALYZE_FREQ) * (ANALYZER_ANALYZE_SPAN);
 
 // perf using X5675 PC3‑10600
-// -O3, 4096 FFT size, no interpolation, 440.wav
+// clang -O3, 4096 FFT size, no interpolation, 440.wav
 // 13726.46 ev/s avg

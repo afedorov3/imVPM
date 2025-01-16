@@ -8,8 +8,12 @@ include(CMakePackageConfigHelpers)
 
 include_directories(../libogg/include ../opus/include)
 
-find_package(Ogg REQUIRED)
-find_package(Opus REQUIRED)
+if (NOT TARGET Ogg::ogg)
+  find_package(Ogg REQUIRED)
+endif()
+if (NOT TARGET Opus::opus)
+  find_package(Opus REQUIRED)
+endif()
 
 set(OPUSFILE_HEADERS
     include/opusfile.h
@@ -55,10 +59,17 @@ set(USIZE64 uint64_t)
 include(CheckTypeSize)
 
 add_library(opusfile ${OPUSFILE_HEADERS} ${OPUSFILE_SOURCES})
+add_library(OpusFile::opusfile ALIAS opusfile)
 target_include_directories(opusfile PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+target_link_libraries(opusfile
+  PUBLIC
+    Ogg::ogg
+    Opus::opus
+    $<$<BOOL:${OP_HAVE_LIBM}>:m>
 )
 
 set_target_properties(
