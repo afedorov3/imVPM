@@ -32,11 +32,6 @@
 // - With Visual Assist installed: ALT+G ("VAssistX.GoToImplementation") can also follow symbols in comments.
 
 /*
-TODO:
-    drag panning
-*/
-
-/*
 
 Index of this file:
 
@@ -72,6 +67,7 @@ Index of this file:
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <IconsFontAwesome6.h>
+#define ANALYZER_ANALYZE_SPAN 60
 #include "Analyzer.hpp"
 #include "AudioHandler.h"
 #include "fonts.h"
@@ -293,7 +289,7 @@ static constexpr float PlotXZoomSpd =     0.5f;  // plot: horizontal mouse zoom 
 static constexpr float PlotYZoomMax =    10.0f;  // plot: vertical zoom max value, ruler font heights
 static constexpr float PlotYZoomMin =     1.0f;  // plot: vertical zoom min value, ruler font heights
 static constexpr float PlotYZoomDef =     3.0f;  // plot: vertical zoom, ruler font heights, default value [3.0f]
-static constexpr float PlotYZoomSpd =     1.0f;  // plot: vertical mouse zoom factor, ruler font heights
+static constexpr float PlotYZoomSpd =     0.5f;  // plot: vertical mouse zoom factor, ruler font heights
 static constexpr float PlotYScrlSpd =    50.0f;  // plot: vertical mouse scroll factor, Cents
 static constexpr bool  PlotAScrlDef =     true;  // plot: vertical autoscroll enabled by default
 static constexpr int   PlotAScrlVelMax =    10;  // plot: vertical autoscroll max value, Cents
@@ -301,7 +297,7 @@ static constexpr int   PlotAScrlVelMin =     1;  // plot: vertical autoscroll mi
 static constexpr int   PlotAScrlVelDef =     3;  // plot: vertical autoscroll, Cents, default value [3]
 static constexpr int   PlotAScrlMar =      100;  // plot: vertical autoscroll margin, Cents
 static constexpr double PlotAScrlGrace =   3.0;  // plot: vertical autoscroll grace period, seconds
-static constexpr bool  PlotRulRightDef =  true;  // plot: ruller on the right side, default value [false] FIXME default
+static constexpr bool  PlotRulRightDef = false;  // plot: ruller on the right side, default value [false]
 static constexpr bool  PlotSemiLinesDef = true;  // plot: draw semitone lines if not on Chromatic scale, default value
 static constexpr bool  PlotSemiLblsDef = false;  // plot: draw semitone label, default value
 static constexpr bool  ShowFreqDef =     false;  // show average pitch frequency by default [false]
@@ -477,6 +473,8 @@ static ImFont    *font_tuner =  nullptr;  // tuner font ptr
 static bool   fonts_reloaded =    false;  // Fonts reloaded signal
 static bool             hold =    false;  // hold is active
 static float           scale =      1.0;  // DPI scaling factor
+static float        x_offset =     0.0f;  // horizontal panning offset
+static bool      x_off_reset =    false;  // reset offset signal
 static float      x_zoom_min =     0.0f;  // plot horizontal zoom min limit based on window size,
                                           //           DPI scale and Analyzer's pitch array size
 static float           c_top =     0.0f;  // current top plot position, Cents
@@ -503,7 +501,7 @@ static size_t f_peak_buf_pos =        0;  // peak frequency averaging buffer pos
 static pathstr_t config_file;             // path to config file
 static bool        ro_config = false;     // config file is read-only or can't be accessed
 static std::string last_file;             // path to last active file
-static std::string open_dir;             // directory of the last file open
+static std::string open_dir;              // directory of the last file open
 static std::string cmd_options;           // command line options help message
 
 typedef std::unique_ptr<pfd::open_file> unique_open_file;
@@ -794,6 +792,8 @@ void inline Resume()
 void inline ToggleHold()
 {
     hold = !hold;
+    if (!hold)
+        x_off_reset = true;
 }
 
 void inline TogglePause()
@@ -807,6 +807,7 @@ void inline TogglePause()
     {
         hold = false;
         audiohandler.resume();
+        x_off_reset = true;
     }
 }
 
@@ -1351,6 +1352,7 @@ bool ImGui::AppConfig()
         0xF026, 0xF028, // volume-off, volume-low, volume-high
         0xF065, 0xF066, // expand, compress
         0xF0c9, 0xF0c9, // bars
+        0xF101, 0xF101, // angles-right
         0xF129, 0xF131, // info, microphone, microphone-slash
         0xF1DE, 0xF1DE, // sliders
         0xF6A9, 0xF6A9, // volume-xmark
@@ -1497,8 +1499,9 @@ void ImGui::AppNewFrame()
 
         // widgets
         //  menu
-        ImVec2 pos = ImGui::GetWindowSize();
-        ImVec2 center = pos / 2;
+        ImVec2 wsize = ImGui::GetWindowSize();
+        ImVec2 center = wsize / 2;
+        ImVec2 pos = wsize;
         pos.x -= widget_sz.x + widget_margin + rullbl_sz.x * rul_right;
         pos.y -= widget_sz.y + widget_margin;
         ImGui::SetCursorPos(pos);
@@ -1550,7 +1553,7 @@ void ImGui::AppNewFrame()
         if (but_hold)
         {
             pos.y += (widget_sz.y - hold_btn_sz.y) / 2;
-            pos.x = ImGui::GetWindowSize().x - widget_margin - rullbl_sz.x * rul_right - hold_btn_sz.x;
+            pos.x = wsize.x - widget_margin - rullbl_sz.x * rul_right - hold_btn_sz.x;
             ImGui::SetCursorPos(pos);
             HoldButton();
         }
@@ -1558,6 +1561,19 @@ void ImGui::AppNewFrame()
         // playback progress
         if (ah_state.isPlaying() && ah_len > 0)
             PlaybackProgress();
+
+        // panning reset button
+        if (x_offset != 0.0f)
+        {
+            float x_sz = font_def_sz * scale + ImGui::GetStyle().FramePadding.x;
+            ImGui::SetCursorPos(ImVec2(wsize.x - x_sz - rullbl_sz.x * rul_right, center.y - wsize.y / 4));
+            ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(ImGui::GetColorU32(UI_colors[UIIdxWidgetHovered], 0.75f)));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
+            if (ImGui::Button(ICON_FA_ANGLES_RIGHT "##PanReset", ImVec2(x_sz, wsize.y / 2)))
+                x_off_reset = true;
+            ImGui::PopStyleColor(3);
+        }
 
         InputControl();
         ProcessLog();
@@ -1949,16 +1965,18 @@ bool ColorPicker(const char *label, ImU32 &color, float split)
 inline void InputControl()
 {
     static bool mlblock = false;
+    static bool psysfocus = true;
+
+    bool hover = ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered();
 
     // Mouse
-    if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered())
+    if (hover)
     {
-
         ImGuiIO &io  = ImGui::GetIO();
         ImVec2 wsize = ImGui::GetWindowSize();
 
         // vertical zoom
-        if (io.KeyMods == ImGuiMod_Ctrl && io.MouseWheel != 0.0f)
+        if (io.KeyMods & ImGuiMod_Ctrl && io.MouseWheel != 0.0f)
         {
             float y_zoomp = y_zoom;
 
@@ -1970,10 +1988,16 @@ inline void InputControl()
         }
 
         // horizontal zoom
-        if (io.KeyMods == ImGuiMod_Shift && io.MouseWheel != 0.0f)
+        if (io.KeyMods & ImGuiMod_Shift && io.MouseWheel != 0.0f)
         {
+            float x_zoomp = x_zoom;
+
             x_zoom += io.MouseWheel * PlotXZoomSpd;
             x_zoom  = std::max(x_zoom_min, std::min(x_zoom, PlotXZoomMax));
+
+            // zoom around mouse pos
+            if (x_offset)
+                x_offset += wsize.x / (x_zoomp * scale) * (1.0f - x_zoomp / x_zoom) * (1.0f - io.MousePos.x / wsize.x);
         }
 
         // vertical scroll
@@ -1987,18 +2011,21 @@ inline void InputControl()
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
         {
             c_pos += ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y / (y_zoom * font_grid_sz * scale / c_dist);
+            x_offset += ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x / (x_zoom * scale);
+            x_off_reset = false;
             ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
             y_ascrl_grace = ImGui::GetTime() + PlotAScrlGrace;
             mlblock = true;
         }
-        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
-        {
-            if (!mlblock && click_hold)
-                TogglePause();
-            mlblock = false;
-        }
-    } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+
+        if (!mlblock && click_hold && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+            TogglePause();
+    }
+    // handle nc activity
+    if (ImGui::SysWndFocus != psysfocus || (!hover && ImGui::IsMouseClicked(ImGuiMouseButton_Left)))
         mlblock = true;
+    else if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        mlblock = false;
 
     // Keyboard
     if (ImGui::IsWindowFocused())
@@ -2018,6 +2045,8 @@ inline void InputControl()
         if (ImGui::IsKeyPressed(ImGuiKey_T, false))
             ImGui::SysSetAlwaysOnTop(!ImGui::SysIsAlwaysOnTop());
     }
+
+    psysfocus = ImGui::SysWndFocus;
 }
 
 void Draw()
@@ -2092,8 +2121,19 @@ void Draw()
     }
     x_center = std::roundf((x_near + x_far) / 2.0f);
 
+    float x_span = (x_right - x_left) / scale;
+    // limit offset
+    if (x_off_reset)
+    {
+        x_offset = (int)(x_offset - x_zoom * 8);
+        x_off_reset = x_offset > 0;
+    }
+    if (x_offset < 0)
+        x_offset = 0.0f;
+    else
+        x_offset = std::min((float)(Analyzer::PITCH_BUF_SIZE - 2 - int(x_span / x_zoom)), x_offset);
     // adjust horizontal zoom
-    x_zoom_min = std::max(PlotXZoomMin, (x_right - x_left) / scale / (float)(Analyzer::PITCH_BUF_SIZE - 2)); // limit zoom by pitch buffer size; ignore current pitch buffer element
+    x_zoom_min = std::max(PlotXZoomMin, x_span / (float)(Analyzer::PITCH_BUF_SIZE - 2)); // limit zoom by pitch buffer size; ignore current pitch buffer element
     if (x_zoom < x_zoom_min)
         x_zoom = x_zoom_min;
     float x_zoom_scaled = x_zoom * scale;
@@ -2101,13 +2141,13 @@ void Draw()
     // horizontal grid / metronome
     if (tempo_grid || metronome) {
         float intervals_per_bpm = 60.0f/* sec */ / (float)tempo_val / Analyzer::get_interval_sec();
-        float total_analyze_cnt = (float)analyzer.get_total_analyze_cnt();
+        float total_analyze_cnt = (float)(analyzer.get_total_analyze_cnt() - (int)x_offset);
         int beat_cnt = (int)(total_analyze_cnt / intervals_per_bpm);
         float offset = total_analyze_cnt - (float)beat_cnt * intervals_per_bpm;
 
         if (metronome) {
             float trig_dist = 7.0f - (float)tempo_val / 60.0f;
-            float trig = (std::fmod(offset + trig_dist, intervals_per_bpm) - trig_dist) / trig_dist;
+            float trig = (std::fmodf(offset + trig_dist, intervals_per_bpm) - trig_dist) / trig_dist;
             if (trig <= 1.0f)
                 draw_list->AddRect(ImVec2(0.0f, 0.0f), ImVec2(wsize.x, wsize.y), plot_colors[PlotIdxMetronome], 0.0f, ImDrawFlags_None, (1.0f - std::fabs(trig)) * 20.0f * scale);
         }
@@ -2118,7 +2158,7 @@ void Draw()
                 draw_list->AddLine(ImVec2(offset, 0.0f), ImVec2(offset, wsize.y), plot_colors[PlotIdxTempo],
                     lut_linew[PlotIdxTempo + (tempo_meter > 0 && beat_cnt % tempo_meter == 0)] * scale);
                 offset -=  x_zoom_scaled * intervals_per_bpm;
-                --beat_cnt;
+                beat_cnt--;
             }
         }
     }
@@ -2158,11 +2198,10 @@ void Draw()
 
         std::lock_guard<std::mutex> lock(analyzer_mtx);
         std::shared_ptr<const float[]> pitch_buf = analyzer.get_pitch_buf();
-        const size_t pitch_buf_pos = analyzer.get_pitch_buf_pos();
-        const size_t pitch_buf_sz = Analyzer::PITCH_BUF_SIZE;
+        const size_t pitch_buf_pos = analyzer.get_pitch_buf_pos() - (int)x_offset;
         for(int i = 0; i < max_cnt; ++i)
         {
-            float p = pitch_buf[(pitch_buf_pos + pitch_buf_sz - 1 - i) % pitch_buf_sz];
+            float p = pitch_buf[(pitch_buf_pos + Analyzer::PITCH_BUF_SIZE - 1 - i) % Analyzer::PITCH_BUF_SIZE];
             if (p >= 0.0f)
             {
                 ImVec2 v(x_right - x_zoom_scaled * i, std::roundf(c2y_off - (p + c_calib) * c2y_mul));
@@ -2286,7 +2325,7 @@ void ProcessLog()
         }
 
         ImU32 color = ImGui::GetColorU32(msg_colors[entry.Lvl],
-                alpha * std::fminf(faderate - std::fabsf(std::fmodf((float)(MsgTimeout[curMsg] - time) * faderate * 2.0f / msgTimeoutSec, faderate * 2.0f) - faderate), 1.0f));
+                alpha * std::min(faderate - std::fabsf(std::fmodf((float)(MsgTimeout[curMsg] - time) * faderate * 2.0f / msgTimeoutSec, faderate * 2.0f) - faderate), 1.0f));
         AddTextAligned(pos, TextAlignCenter, TextAlignMiddle, color, draw_list, entry.Msg.get());
 
         pos.y -= font_def_sz * 1.5f;
