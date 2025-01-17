@@ -15,17 +15,18 @@ namespace ImGui
         WSMaximized,
     };
 
+    typedef void (*AppDragAndDropCb)(const char *file);
+
     // Backend variables
     extern ImRect SysWndPos;                         // restored window position x, y, w, h
     extern ImRect SysWndMinMax;                      // desired min (x,y) and max(w,h) window client area
     extern ImVec4 SysWndBgColor;                     // client window background color r, g, b, a
     extern bool SysWndFocus;                         // system window has focus
     extern WindowState SysWndState;                  // system window state
+    extern float SysWndScaling;                      // current scaling of the window
     extern bool AppExit;                             // exit signal to backend
     extern bool AppReconfigure;                      // request backend to call AppConfig()
                                                      // backend can also set this flag on system configuration events
-    extern ImU32 DPI;                                // current DPI of the window (or system if N/A)
-    extern const ImU32 defaultDPI;                   // default DPI of the window (or system if N/A)
 
     // App functions
     int  AppInit(int argc, char const *const* argv); // called once at the start of main() function
@@ -36,11 +37,17 @@ namespace ImGui
     void AppDestroy();                               // called once just after the main loop
 
     // Backend functions
+    // window related functions (including drag and drop) should not be called prior AppConfig()
     void SysSetWindowTitle(const char* title);       // set native window title
     void SysMinimize();                              // minimize system window
     void SysMaximize();                              // maximize system window
     void SysRestore();                               // restore system window position
     bool SysIsAlwaysOnTop();                         // window is always on top
-    void SysSetAlwaysOnTop(bool set);                // set/reset window topmost style
-    ImS32 SysOpen(const char* resource);             // open object
+    void SysSetAlwaysOnTop(bool on_top);             // set/reset window topmost style
+    ImS32 SysOpen(const char* resource);             // open resource in system shell,
+                                                     // returns 0 on success or error code on failure (if supported)
+                                                     // custom open routine provided due to Platform_OpenInShellFn runs
+                                                     // ShellExecuteA and so requires UTF8 support shenanigans (1903 + manifest)
+    void SysAcceptFiles(AppDragAndDropCb cb);        // start accepting drag and drop files
+    void SysRejectFiles();                           // stop accepting drag and drop files
 }

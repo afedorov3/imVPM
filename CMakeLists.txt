@@ -3,7 +3,8 @@ project(imVocalPitchMonitor DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES
 
 # build tools required: CMake, git, make/ninja, C++11 compiler (Clang/GCC/MSVC are tested),
 #                       patch (on windows you'll get it with git),
-#                       Windows SDK and MSVC libs for windows build (the only supported option yet)
+#        Windows build: Windows SDK and MSVC libs
+#          Linux build: SDL2, vulkan, kdialog / zenity, opusfile [optional]
 
 if (NOT DEFINED OPUS_SUPPORT)
   set(OPUS_SUPPORT "yes")
@@ -15,14 +16,20 @@ set(UI_FONT_MONO "DejaVuSansMono.ttf")
 set(FA_REGULAR "Font Awesome 6 Free-Regular-400.otf")
 set(FA_SOLID "Font Awesome 6 Free-Solid-900.otf")
 
-if (NOT DEFINED PM_BACKEND)
-  #set(PM_BACKEND "sdl2")
-  set(PM_BACKEND "win32")
+if (NOT DEFINED IMVPM_BACKEND)
+  if (WIN32)
+    set(IMVPM_BACKEND "win32")
+  else()
+    set(IMVPM_BACKEND "sdl2")
+  endif()
 endif()
 
-if (NOT DEFINED PM_GRAPHICS)
-  #set(PM_GRAPHICS "opengl3")
-  set(PM_GRAPHICS "dx11")
+if (NOT DEFINED IMVPM_GRAPHICS)
+  if (WIN32)
+    set(IMVPM_GRAPHICS "dx11")
+  else()
+    set(IMVPM_GRAPHICS "vulkan")
+  endif()
 endif()
 
 find_program(PATCH patch)
@@ -73,28 +80,37 @@ if (VENDORED_BUILD)
 
   if (OPUS_SUPPORT)
 
-    if (NOT EXISTS ${LIBOGG_SRC})
-      message(FATAL_ERROR "libogg sources not available (${LIBOGG_SRC})")
-    endif()
-    if (NOT EXISTS ${OPUS_SRC})
-      message(FATAL_ERROR "opus sources not available (${OPUS_SRC})")
-    endif()
-    if (NOT EXISTS ${OPUSFILE_SRC})
-      message(FATAL_ERROR "opusfile sources not available (${OPUSFILE_SRC})")
-    endif()
+    if (WIN32)
+      if (NOT EXISTS ${LIBOGG_SRC})
+        message(FATAL_ERROR "libogg sources not available (${LIBOGG_SRC})")
+      endif()
+      if (NOT EXISTS ${OPUS_SRC})
+        message(FATAL_ERROR "opus sources not available (${OPUS_SRC})")
+      endif()
+      if (NOT EXISTS ${OPUSFILE_SRC})
+        message(FATAL_ERROR "opusfile sources not available (${OPUSFILE_SRC})")
+      endif()
 
-    # provide our CMake configuration for opusfile
-    execute_process(
-      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/assets/external/opusfile/CMakeLists.txt ${OPUSFILE_SRC}/CMakeLists.txt
-    )
+      # provide our CMake configuration for opusfile
+      execute_process(
+        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/assets/external/opusfile/CMakeLists.txt ${OPUSFILE_SRC}/CMakeLists.txt
+      )
 
-    set(OP_DISABLE_HTTP "yes")
-    set(OP_DISABLE_EXAMPLES "yes")
-    set(OP_DISABLE_DOCS "yes")
+      set(OP_DISABLE_HTTP "yes")
+      set(OP_DISABLE_EXAMPLES "yes")
+      set(OP_DISABLE_DOCS "yes")
 
-    add_subdirectory(${LIBOGG_SRC} EXCLUDE_FROM_ALL)
-    add_subdirectory(${OPUS_SRC} EXCLUDE_FROM_ALL)
-    add_subdirectory(${OPUSFILE_SRC} EXCLUDE_FROM_ALL)
+      add_subdirectory(${LIBOGG_SRC} EXCLUDE_FROM_ALL)
+      add_subdirectory(${OPUS_SRC} EXCLUDE_FROM_ALL)
+      add_subdirectory(${OPUSFILE_SRC} EXCLUDE_FROM_ALL)
+
+    else()
+
+      find_package(PkgConfig)
+      pkg_search_module(opusfile REQUIRED opusfile)
+      include_directories(${opusfile_INCLUDEDIR}/opus)
+
+    endif()
 
   endif()
 
@@ -169,30 +185,41 @@ else()
   FetchContent_MakeAvailable(imgui miniaudio fft4g simpleini pfd popl)
 
   if (OPUS_SUPPORT)
-    set(OP_DISABLE_HTTP "yes")
-    set(OP_DISABLE_EXAMPLES "yes")
-    set(OP_DISABLE_DOCS "yes")
 
-    FetchContent_Declare(
-      libogg
-      GIT_REPOSITORY  https://github.com/xiph/ogg.git
-      GIT_TAG         master
-      DOWNLOAD_EXTRACT_TIMESTAMP yes
-    )
-    FetchContent_Declare(
-      opus
-      GIT_REPOSITORY  https://github.com/xiph/opus.git
-      GIT_TAG         main
-      DOWNLOAD_EXTRACT_TIMESTAMP yes
-    )
-    FetchContent_Declare(
-      opusfile
-      GIT_REPOSITORY  https://github.com/xiph/opusfile.git
-      GIT_TAG         master
-      DOWNLOAD_EXTRACT_TIMESTAMP yes
-    )
+    if (WIN32)
 
-    FetchContent_MakeAvailable(libogg opus opusfile)
+      set(OP_DISABLE_HTTP "yes")
+      set(OP_DISABLE_EXAMPLES "yes")
+      set(OP_DISABLE_DOCS "yes")
+
+      FetchContent_Declare(
+        libogg
+        GIT_REPOSITORY  https://github.com/xiph/ogg.git
+        GIT_TAG         master
+        DOWNLOAD_EXTRACT_TIMESTAMP yes
+      )
+      FetchContent_Declare(
+        opus
+        GIT_REPOSITORY  https://github.com/xiph/opus.git
+        GIT_TAG         main
+        DOWNLOAD_EXTRACT_TIMESTAMP yes
+      )
+      FetchContent_Declare(
+        opusfile
+        GIT_REPOSITORY  https://github.com/xiph/opusfile.git
+        GIT_TAG         master
+        DOWNLOAD_EXTRACT_TIMESTAMP yes
+      )
+
+      FetchContent_MakeAvailable(libogg opus opusfile)
+
+    else()
+
+      find_package(PkgConfig)
+      pkg_search_module(opusfile REQUIRED opusfile)
+      include_directories(${opusfile_INCLUDEDIR}/opus)
+
+    endif()
 
   endif()
 
@@ -207,7 +234,7 @@ set(FONTS_SRC ${CMAKE_SOURCE_DIR}/external/fonts)
 ### prepare sources
 ###
 
-if(${PM_GRAPHICS} STREQUAL "dx11")
+if(${IMVPM_GRAPHICS} STREQUAL "dx11")
   execute_process(
     COMMAND ${PATCH} -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/imgui/ImGui_ImplDX11_ReCreateFontsTexture.patch
     WORKING_DIRECTORY ${IMGUI_SRC}
@@ -259,12 +286,12 @@ endif()
 ###
 ### imVocalPitchMonitor
 ###
-add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp ${MINIAUDIO_SRC}/extras/stb_vorbis.c src/imgui/backends/${PM_BACKEND}_${PM_GRAPHICS}.cpp ${FFT4G_SRC}/fft4g.cpp ${IMGUI_SRC}/backends/imgui_impl_${PM_GRAPHICS}.cpp ${IMGUI_SRC}/backends/imgui_impl_${PM_BACKEND}.cpp ${IMGUI_SRC}/imgui.cpp ${IMGUI_SRC}/imgui_widgets.cpp ${IMGUI_SRC}/imgui_tables.cpp ${IMGUI_SRC}/imgui_draw.cpp)
+add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp ${MINIAUDIO_SRC}/extras/stb_vorbis.c src/imgui/backends/${IMVPM_BACKEND}_${IMVPM_GRAPHICS}.cpp ${FFT4G_SRC}/fft4g.cpp ${IMGUI_SRC}/backends/imgui_impl_${IMVPM_GRAPHICS}.cpp ${IMGUI_SRC}/backends/imgui_impl_${IMVPM_BACKEND}.cpp ${IMGUI_SRC}/imgui.cpp ${IMGUI_SRC}/imgui_widgets.cpp ${IMGUI_SRC}/imgui_tables.cpp ${IMGUI_SRC}/imgui_draw.cpp)
 set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
 target_include_directories(imvpm PRIVATE src/imgui ${FFT4G_SRC} ${MINIAUDIO_SRC} ${IMGUI_SRC} ${IMGUI_SRC}/backends ${FONTS_SRC} ${PFD_SRC} ${SIMPLEINI_SRC} ${POPL_SRC}/include)
 if (OPUS_SUPPORT)
   target_compile_definitions(imvpm PRIVATE HAVE_OPUS)
-  target_link_libraries(imvpm PRIVATE OpusFile::opusfile)
+  target_link_libraries(imvpm PRIVATE opusfile)
 endif()
 
 ###
@@ -294,15 +321,15 @@ endif()
 ###
 ### GUI dependencies
 ###
-if(${PM_BACKEND} STREQUAL "win32")
+if(${IMVPM_BACKEND} STREQUAL "win32")
   target_link_libraries(imvpm PRIVATE Dwmapi)
-elseif(${PM_BACKEND} STREQUAL "sdl2")
+elseif(${IMVPM_BACKEND} STREQUAL "sdl2")
   include_directories(/usr/include/SDL2)
   target_link_libraries(imvpm PRIVATE SDL2)
 endif()
 
-if(${PM_GRAPHICS} STREQUAL "opengl3")
-  target_link_libraries(imvpm PRIVATE OpenGL)
-elseif(${PM_GRAPHICS} STREQUAL "dx11")
+if(${IMVPM_GRAPHICS} STREQUAL "vulkan")
+  target_link_libraries(imvpm PRIVATE vulkan)
+elseif(${IMVPM_GRAPHICS} STREQUAL "dx11")
   target_link_libraries(imvpm PRIVATE d3d11 d3dcompiler)
 endif()

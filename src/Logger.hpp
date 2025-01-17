@@ -8,13 +8,6 @@
 
 namespace logger {
 
-#ifndef _WIN32
-#define sprintf_s snprintf
-#define _scprintf(fmt, ...) snprintf(NULL, 0, fmt, ## __VA_ARGS__)
-// not safe replacement, terminate manually
-#define strcpy_s(dst, sz, src) strncpy(dst, src, (sz) - 1)
-#endif
-
 enum LOG_LVL {
     LOG_ERR = 0,
     LOG_WARN,
@@ -50,13 +43,15 @@ public:
     void LogMsg(LOG_LVL lvl, const char *msg) {
         if (lvl > mLvl)
             return;
-        int size = (int)strlen(msg) + 1; // Extra space for '\0'
-        std::unique_ptr<char[]> buf(new char[size]);
-        strcpy_s(buf.get(), size, msg);
+        int len = (int)strlen(msg);
+        if (len == 0)
+            return;
+        std::unique_ptr<char[]> buf(new char[len + 1]);
+        memcpy(buf.get(), msg, len);
         // terminate and get rid of trailing new line
-        buf[--size] = '\0';
-        while(--size >= 0 && (buf[size] == '\r' || buf[size] == '\n'))
-            buf[size] = '\0';
+        buf[len] = '\0';
+        while(--len >= 0 && (buf[len] == '\r' || buf[len] == '\n'))
+            buf[len] = '\0';
         mMutex.lock();
         mEntries.emplace_front(Entry({++mLastN, time(nullptr), lvl, std::move(buf)}));
         mSize++;
@@ -71,15 +66,14 @@ public:
     void LogMsg(LOG_LVL lvl, const char *fmt, Args&&... args) {
         if (lvl > mLvl)
             return;
-        int size = _scprintf(fmt, std::forward<Args>(args)...) + 1; // Extra space for '\0'
-        if (size <= 0)
+        int len = snprintf(nullptr, 0, fmt, std::forward<Args>(args)...);
+        if (len <= 0)
             return;
-        std::unique_ptr<char[]> buf(new char[size]);
-        sprintf_s(buf.get(), size, fmt, std::forward<Args>(args)...);
+        std::unique_ptr<char[]> buf(new char[len + 1]);
+        snprintf(buf.get(), len + 1, fmt, std::forward<Args>(args)...);
         // get rid of trailing new line
-        --size;
-        while(--size >= 0 && (buf[size] == '\r' || buf[size] == '\n'))
-            buf[size] = '\0';
+        while(--len >= 0 && (buf[len] == '\r' || buf[len] == '\n'))
+            buf[len] = '\0';
         mMutex.lock();
         mEntries.emplace_front(Entry({++mLastN, time(nullptr), lvl, std::move(buf)}));
         mSize++;

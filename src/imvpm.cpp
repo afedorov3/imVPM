@@ -78,7 +78,6 @@ Index of this file:
 
 #define IMGUI_APP
 #include "imgui_local.h"
-#include "imgui_widgets.h"
 #include "version.h"
 
 // System includes
@@ -89,6 +88,7 @@ Index of this file:
 #include <inttypes.h>       // PRId64/PRIu64, not avail in some MinGW headers.
 #endif
 #include <sys/stat.h>
+#include <climits>
 
 using namespace logger;
 
@@ -315,6 +315,9 @@ static constexpr bool  ButtonScaleDef =   true;  // UI: show scale selector by d
 static constexpr bool  ButtonTempoDef =   true;  // UI: show tempo selector by default [true]
 static constexpr bool  ButtonDevsDef =    true;  // UI: show device selector by default [true]
 static constexpr bool  ClickToHoldDef =   true;  // UI: click on canvas to toggle hold / pause [true]
+static constexpr float CustomScaleMin =   0.5f;  // UI: custom scaling minimum value
+static constexpr float CustomScaleMax =   4.0f;  // UI: custom scaling maximum value
+
 
 // selections
 enum {                                           // settings: note naming scheme
@@ -373,6 +376,8 @@ static bool       but_scale = ButtonScaleDef;
 static bool       but_tempo = ButtonTempoDef;
 static bool     but_devices = ButtonDevsDef;
 static bool      click_hold = ClickToHoldDef;
+static bool  custom_scaling = false;
+static float   custom_scale = 1.0f;
 static float    play_volume = 1.0f;
 static bool            mute = false;
 static std::string scale_str(scale_list[0]);
@@ -472,7 +477,7 @@ static ImFont    *font_pitch =  nullptr;  // pitch font ptr
 static ImFont    *font_tuner =  nullptr;  // tuner font ptr
 static bool   fonts_reloaded =    false;  // Fonts reloaded signal
 static bool             hold =    false;  // hold is active
-static float           scale =      1.0;  // DPI scaling factor
+static float        ui_scale =      1.0;  // DPI scaling factor
 static float        x_offset =     0.0f;  // horizontal panning offset
 static bool      x_off_reset =    false;  // reset offset signal
 static float      x_zoom_min =     0.0f;  // plot horizontal zoom min limit based on window size,
@@ -567,33 +572,6 @@ static void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpi
 // [SECTION] Helpers
 //-----------------------------------------------------------------------------
 
-#if !defined(_WIN32)
-#include <errno.h>
-typedef int errno_t;
-errno_t strcpy_s(char* dst, size_t size, const char* src)
-{ 
-    if(!size || !dst || !src) return EINVAL;
-
-    for(;size > 1;--size)
-    {
-        if(!(*dst++ = *src++)) return 0;
-    }
-    *dst = '\0';
-
-    return ERANGE;
-}
-int sprintf_s(char *dst, size_t dst_sz, const char *fmt, ...)
-{
-    int ret;
-    va_list args;
-    va_start(args, fmt);
-    ret = vsnprintf(dst, dst_sz - 1, fmt, args);
-    va_end(args);
-    dst[ret] = '\0';
-    return ret;
-}
-#endif // !_WIN32
-
 #if defined(_WIN32)
 pathstr_t GetConfigPath()
 {
@@ -664,9 +642,9 @@ void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpidx, int
     static char label[16];
 
     if (octave >= 0)
-        sprintf_s(label, IM_ARRAYSIZE(label), "%s%s%d", lut_note[note_names][note], lut_semisym[sharpidx], octave);
+        snprintf(label, IM_ARRAYSIZE(label), "%s%s%d", lut_note[note_names][note], lut_semisym[sharpidx], octave);
     else
-        sprintf_s(label, IM_ARRAYSIZE(label), "%s%s", lut_note[note_names][note], lut_semisym[sharpidx]);
+        snprintf(label, IM_ARRAYSIZE(label), "%s%s", lut_note[note_names][note], lut_semisym[sharpidx]);
     ImVec2 size = ImGui::CalcTextSize(label);
     at.x += size.x / 2.0f * alignH;
     at.y += size.y / 2.0f * alignV;
@@ -737,11 +715,11 @@ void inline Record(const char *file = nullptr)
         // if given filename has any extention other than .wav, replace it with .wav as miniaudio will encode as WAV anyway
         for ( auto i = last_file.rbegin(); i != last_file.rend(); i++ )
         {
-			if (*i == '\\' || *i == '/')
-				break;
+            if (*i == '\\' || *i == '/')
+                break;
             else if (*i == '.')
             {
-				last_file.resize(last_file.rend() - i - 1);
+                last_file.resize(last_file.rend() - i - 1);
                 break;
             }
         }
@@ -935,7 +913,8 @@ bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, c
     if (len == 0 || (len + 1) > value_sz)
         return false;
 
-    strcpy_s(value, value_sz, pv);
+    memcpy(value, pv, len);
+    value[len] = '\0';
 
     return true;
 }
@@ -997,6 +976,8 @@ void LoadSettings()
             GETVAL("imvpm", but_tempo);
             GETVAL("imvpm", but_devices);
             GETVAL("imvpm", click_hold);
+            GETVAL("imvpm", custom_scaling);
+            GETVAL("imvpm", custom_scale, CustomScaleMin, CustomScaleMax);
             GETVAL("imvpm", play_volume, 0.0f, 1.0f);
             GETVAL("imvpm", mute);
             GETVAL("imvpm", scale_str, (const char**)scale_list, IM_ARRAYSIZE(scale_list));
@@ -1009,7 +990,7 @@ void LoadSettings()
                 char key[64];
                 for (size_t i = 0; i < plot_colors.size(); i++)
                 {
-                    sprintf_s(key, IM_ARRAYSIZE(key), "plot_colors_%zu", i);
+                    snprintf(key, IM_ARRAYSIZE(key), "plot_colors_%zu", i);
                     GetIniValue(ini, "imvpm", key, (int&)plot_colors[i], INT_MIN, INT_MAX);
                 }
             }
@@ -1055,7 +1036,7 @@ void LoadSettings()
     }
 }
 
-#define  SETVAL(sec, var, format) do { sprintf_s(sval, IM_ARRAYSIZE(sval), format, var); ini.SetValue(sec, #var, sval); } while(0)
+#define  SETVAL(sec, var, format) do { snprintf(sval, IM_ARRAYSIZE(sval), format, var); ini.SetValue(sec, #var, sval); } while(0)
 #define SETBOOL(sec, var) do { ini.SetValue(sec, #var, (var) ? "true" : "false"); } while(0)
 void SaveSettings()
 {
@@ -1091,6 +1072,8 @@ void SaveSettings()
     SETBOOL("imvpm", but_tempo);
     SETBOOL("imvpm", but_devices);
     SETBOOL("imvpm", click_hold);
+    SETBOOL("imvpm", custom_scaling);
+    SETVAL ("imvpm", custom_scale, "%0.1f");
     SETVAL ("imvpm", play_volume, "%0.3f");
     SETBOOL("imvpm", mute);
     ini.SetValue("imvpm", "scale_str", scale_str.c_str());
@@ -1104,17 +1087,17 @@ void SaveSettings()
         for (size_t i = 0; i < (int)plot_colors.size(); i++)
         {
             if (i == PlotIdxReserved) continue;
-            sprintf_s(key, IM_ARRAYSIZE(key), "plot_colors_%zu", i);
-            sprintf_s(sval, IM_ARRAYSIZE(sval), "0x%X", plot_colors[i]);
+            snprintf(key, IM_ARRAYSIZE(key), "plot_colors_%zu", i);
+            snprintf(sval, IM_ARRAYSIZE(sval), "0x%X", plot_colors[i]);
             ini.SetValue("imvpm", key, sval);
         }
     }
     // window state
-    sprintf_s(sval, IM_ARRAYSIZE(sval), "0x%X", (ImU32)ImColor(ImGui::SysWndBgColor));
+    snprintf(sval, IM_ARRAYSIZE(sval), "0x%X", (ImU32)ImColor(ImGui::SysWndBgColor));
     ini.SetValue("imvpm", "wnd_bg_color", sval);
-    sprintf_s(sval, IM_ARRAYSIZE(sval), "%d %d %d %d", ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h);
+    snprintf(sval, IM_ARRAYSIZE(sval), "%d %d %d %d", ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h);
     ini.SetValue("imvpm", "wnd_pos", sval);
-    sprintf_s(sval, IM_ARRAYSIZE(sval), "%d", (int)ImGui::SysWndState);
+    snprintf(sval, IM_ARRAYSIZE(sval), "%d", (int)ImGui::SysWndState);
     ini.SetValue("imvpm", "wnd_state", sval);
     if (record_dir[0])
         ini.SetValue("imvpm", "record_dir", record_dir);
@@ -1150,6 +1133,10 @@ void ResetSettings()
     but_tempo = ButtonTempoDef;
     but_devices = ButtonDevsDef;
     click_hold = ClickToHoldDef;
+    if (custom_scaling || custom_scale != 1.0f)
+        ImGui::AppReconfigure = true;
+    custom_scaling = false;
+    custom_scale = 1.0f;
     scale_str = scale_list[0];
     ImGui::SysWndBgColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
     plot_colors = DefaultPlotColors;
@@ -1261,6 +1248,21 @@ void eventCb(const AudioHandler::Notification &notification, void *userData)
 }
 
 // ImGui
+void DragAndDropCb(const char *file)
+{
+    static double blanking = 0.0;
+    double time = ImGui::GetTime();
+    if (blanking < time)
+    {
+        AudioHandler::State state;
+        audiohandler.getState(state);
+
+        if (!state.isRecording())
+            Play(file);
+        blanking = time + 3.0; // accept only one file in x seconds
+    }
+}
+
 int ImGui::AppInit(int argc, char const *const* argv)
 {
     msg_log.SetLevel(LOG_INFO);
@@ -1278,7 +1280,10 @@ int ImGui::AppInit(int argc, char const *const* argv)
     audiohandler.enumerate();
 
     if (!pfd::settings::available())
+    {
         msg_log.LogMsg(LOG_WARN, "portable-file-dialogs is unavailable on this platform, file dialogs ceased");
+        msg_log.LogMsg(LOG_WARN, "On *nix systems try to install kdialog / zenity");
+    }
 
     popl::OptionParser op("opts");
     auto capture_option     = op.add<popl::Value<std::string>>("i", "capture", "capture device");
@@ -1312,9 +1317,9 @@ int ImGui::AppInit(int argc, char const *const* argv)
     }
     catch(const popl::invalid_option& e)
     {
-		msg_log.LogMsg(LOG_ERR, "Invalid option: %s", e.what());
+        msg_log.LogMsg(LOG_ERR, "Invalid option: %s", e.what());
     }
-	catch (const std::exception& e) {}
+    catch (const std::exception& e) {}
 
     return 0;
 }
@@ -1322,12 +1327,12 @@ int ImGui::AppInit(int argc, char const *const* argv)
 #define FONT_DATA(n) n ## _compressed_data
 #define FONT_SIZE(n) n ## _compressed_size
 #define ADD_FONT(var, ranges, name) do {\
-  strcpy_s(font_config.Name, IM_ARRAYSIZE(font_config.Name), #name ", " #var); \
-  var = io.Fonts->AddFontFromMemoryCompressedTTF(FONT_DATA(name) , FONT_SIZE(name), var ## _sz * scale, &font_config, ranges); \
+  snprintf(font_config.Name, IM_ARRAYSIZE(font_config.Name), "%s, %0.1fpx", #name, var ## _sz); \
+  var = io.Fonts->AddFontFromMemoryCompressedTTF(FONT_DATA(name) , FONT_SIZE(name), var ## _sz * ui_scale, &font_config, ranges); \
 } while(0)
 #define MERGE_FONT(var, ranges, name) do {\
   font_config.MergeMode = true; \
-  font_config.GlyphMinAdvanceX = var ## _sz * scale; \
+  font_config.GlyphMinAdvanceX = var ## _sz * ui_scale; \
   io.Fonts->AddFontFromMemoryCompressedTTF(FONT_DATA(name) , FONT_SIZE(name), font_config.GlyphMinAdvanceX, &font_config, ranges); \
   font_config.MergeMode = false; \
   font_config.GlyphMinAdvanceX = 0; \
@@ -1336,7 +1341,10 @@ bool ImGui::AppConfig()
 {
     ImGui::SysSetWindowTitle(WINDOW_TITLE);
 
-    scale = (float)ImGui::DPI / (float)ImGui::defaultDPI;
+    if (custom_scaling)
+        ui_scale = custom_scale;
+    else
+        ui_scale = ImGui::SysWndScaling;
 
     ImGuiIO &io = ImGui::GetIO();
 
@@ -1400,24 +1408,26 @@ bool ImGui::AppConfig()
     fonts_reloaded = true;
 
     ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowPadding = ImVec2(font_def_sz / 2 * scale, font_def_sz / 2 * scale);
-    style.ItemSpacing = ImVec2(font_def_sz / 2 * scale, font_def_sz / 2 * scale);
-    style.ItemInnerSpacing = ImVec2(font_def_sz / 4 * scale, font_def_sz / 4 * scale);
-    style.FrameRounding = 5.0f * scale;
-    style.PopupRounding = 5.0f * scale;
-    style.GrabRounding  = 4.0f * scale;
-    style.GrabMinSize   = 15.0f * scale;
+    style.WindowPadding = ImVec2(font_def_sz / 2 * ui_scale, font_def_sz / 2 * ui_scale);
+    style.ItemSpacing = ImVec2(font_def_sz / 2 * ui_scale, font_def_sz / 2 * ui_scale);
+    style.ItemInnerSpacing = ImVec2(font_def_sz / 4 * ui_scale, font_def_sz / 4 * ui_scale);
+    style.FrameRounding = 5.0f * ui_scale;
+    style.PopupRounding = 5.0f * ui_scale;
+    style.GrabRounding  = 4.0f * ui_scale;
+    style.GrabMinSize   = 15.0f * ui_scale;
     style.SeparatorTextAlign = ImVec2(0.5f, 0.75f);
     style.ColorButtonPosition = ImGuiDir_Left;
     style.Colors[ImGuiCol_Text] = ImColor(UI_colors[UIIdxDefault]);
 
-    widget_padding = font_widget_sz * scale / 5;
-    widget_sz = ImVec2(font_widget_sz * scale + widget_padding * 2, font_widget_sz * scale + widget_padding * 2);
-    widget_margin = font_widget_sz * scale / 2.5;
-    menu_spacing = 8.0f * scale;
+    widget_padding = font_widget_sz * ui_scale / 5;
+    widget_sz = ImVec2(font_widget_sz * ui_scale + widget_padding * 2, font_widget_sz * ui_scale + widget_padding * 2);
+    widget_margin = font_widget_sz * ui_scale / 2.5;
+    menu_spacing = 8.0f * ui_scale;
 
     ImGui::SysWndMinMax.x = (widget_sz.x + widget_margin) * 10;
     ImGui::SysWndMinMax.y = (widget_sz.x + widget_margin) * 10;
+
+    ImGui::SysAcceptFiles(DragAndDropCb);
 
     return true;
 }
@@ -1444,7 +1454,7 @@ void ImGui::AppNewFrame()
         if (semi_lbls)
             rullbl_sz.x += ImGui::CalcTextSize("♯").x;
         rullbl_sz.x += ImGui::CalcTextSize("8").x;
-        rullbl_sz.x += rul_margin * 2.0f * scale;
+        rullbl_sz.x += rul_margin * 2.0f * ui_scale;
         ImGui::PopFont();
         ImGui::PushFont(font_pitch);
         x_peak_off = ImGui::CalcTextSize("8").x * 1.5f;
@@ -1472,19 +1482,23 @@ void ImGui::AppNewFrame()
     if (select_folder_dlg && select_folder_dlg->ready(0))
     {
         auto dir = select_folder_dlg->result();
-        if (!dir.empty())
-            strcpy_s(record_dir, IM_ARRAYSIZE(record_dir), dir.c_str());
+        if (!dir.empty() && dir.length() < IM_ARRAYSIZE(record_dir))
+        {
+            memcpy(record_dir, dir.c_str(), dir.length());
+            record_dir[dir.length()] = '\0';
+        }
         select_folder_dlg = nullptr;
     }
 
     audiohandler.getState(ah_state, &ah_len, &ah_pos); // cache handler state for a frame
+    audiohandler.getError();                           // discard any errors
 
     // if handler is idling try to restart after a grace period for some number of tries
     static double restart_at = 0.0;
     static int tries = 0;
     if (ah_state.isIdle())
     {
-        if (tries < 3)
+        if (tries < 2)
         {
             if (restart_at == 0.0)
                 restart_at = ImGui::GetTime() + 1.0;
@@ -1585,7 +1599,7 @@ void ImGui::AppNewFrame()
         // panning reset button
         if (x_offset != 0.0f)
         {
-            float x_sz = font_def_sz * scale + ImGui::GetStyle().FramePadding.x;
+            float x_sz = font_def_sz * ui_scale + ImGui::GetStyle().FramePadding.x;
             ImGui::SetCursorPos(ImVec2(wsize.x - x_sz - rullbl_sz.x * rul_right, center.y - wsize.y / 4));
             ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(ImGui::GetColorU32(UI_colors[UIIdxWidgetHovered], 0.75f)));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
@@ -1700,7 +1714,7 @@ void PlaybackDevices()
         audiohandler.getPlaybackVolumeFactor(vol);
         vol *= 100.0f;
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-        if (ImGui::SliderFloat("##VolumeControl", &vol, 0.0f, 100.0f, "Volume %.0f%%"))
+        if (ImGui::SliderFloat("##VolumeControl", &vol, 0.0f, 100.0f, "Volume %.0f%%"), ImGuiSliderFlags_AlwaysClamp)
         {
             play_volume = vol / 100.0f;
             mute = false;
@@ -1780,7 +1794,7 @@ void TempoSettings()
     ImGui::Checkbox("Tempo grid", &tempo_grid);
     ImGui::SameLine(); ImGui::Checkbox("Metronome", &metronome);
 
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(font_def_sz / 8 * scale, font_def_sz / 8 * scale));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(font_def_sz / 8 * ui_scale, font_def_sz / 8 * ui_scale));
     ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
     if (ImGui::ArrowButton("##TempoSlower", ImGuiDir_Left)) { tempo_val > TempoValueMin && tempo_val--; }
     ImGui::SameLine();
@@ -1788,7 +1802,7 @@ void TempoSettings()
     ImGui::PopItemFlag();
     ImGui::SameLine();
     ImGui::PopStyleVar();
-    ImGui::SliderInt("##TempoValue", &tempo_val, TempoValueMin, TempoValueMax, "BPM = %d");
+    ImGui::SliderInt("##TempoValue", &tempo_val, TempoValueMin, TempoValueMax, "BPM = %d", ImGuiSliderFlags_AlwaysClamp);
 
     ImGui::BeginGroup();
     ImGui::AlignTextToFramePadding();
@@ -1803,7 +1817,7 @@ void TempoControl()
 {
     static char label[] = "120\n ᴮᴾᴹ##TempoControl";
 
-    sprintf_s(label, 4, "%3d", tempo_val);
+    snprintf(label, 4, "%3d", tempo_val);
     label[3] = '\n';
     ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5f));
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxDefault], 0.5f));
@@ -1915,7 +1929,7 @@ void PlaybackProgress()
 
 bool ColorPicker(const char *label, ImU32 &color, float split)
 {
-    float button_width(100.0f * scale);
+    float button_width(100.0f * ui_scale);
     static ImColor backup_color;
     bool ret = false;
     ImColor col(color);
@@ -1931,7 +1945,7 @@ bool ColorPicker(const char *label, ImU32 &color, float split)
     }
     if (ImGui::BeginPopup("##PaletePicker"))
     {
-        ImVec2 item_sz = ImVec2(20, 20) * scale;
+        ImVec2 item_sz = ImVec2(20, 20) * ui_scale;
         constexpr size_t row_sz(4);
 
         float spacing = ImGui::GetStyle().ItemSpacing.y;
@@ -2017,7 +2031,7 @@ inline void InputControl()
 
             // zoom around mouse pos
             if (x_offset)
-                x_offset += wsize.x / (x_zoomp * scale) * (1.0f - x_zoomp / x_zoom) * (1.0f - io.MousePos.x / wsize.x);
+                x_offset += wsize.x / (x_zoomp * ui_scale) * (1.0f - x_zoomp / x_zoom) * (1.0f - io.MousePos.x / wsize.x);
         }
 
         // vertical scroll
@@ -2030,8 +2044,8 @@ inline void InputControl()
         // left button
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
         {
-            c_pos += ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y / (y_zoom * font_grid_sz * scale / c_dist);
-            x_offset += ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x / (x_zoom * scale);
+            c_pos += ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y / (y_zoom * font_grid_sz * ui_scale / c_dist);
+            x_offset += ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x / (x_zoom * ui_scale);
             x_off_reset = false;
             ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
             y_ascrl_grace = ImGui::GetTime() + PlotAScrlGrace;
@@ -2080,7 +2094,7 @@ void Draw()
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     // adjust plot limits
-    float step = y_zoom * font_grid_sz * scale;
+    float step = y_zoom * font_grid_sz * ui_scale;
     float c2y_mul = step / c_dist;
     float c2y_off = wsize.y + c_pos * c2y_mul;
 
@@ -2117,31 +2131,31 @@ void Draw()
     // pitch data last position, first position
     float x_left, x_right;
     // octave boundary notch size and direction
-    float notch = scale_chroma ? 0.0f : 4.0f * scale;
+    float notch = scale_chroma ? 0.0f : 4.0f * ui_scale;
     // ruler label position and alight
     float x_rullbl; int align_rullbl;
     if (rul_right)
     {
         x_near       = wsize.x - rullbl_sz.x;
         x_far        = 0.0f;
-        x_left       = x_far + lut_linew[PlotIdxPitch] * scale / 2; // + pitch line width
-        x_right      = x_near - lut_linew[PlotIdxTonic] * scale;    // - split line width
-        x_rullbl     = x_near + rul_margin * scale;
+        x_left       = x_far + lut_linew[PlotIdxPitch] * ui_scale / 2; // + pitch line width
+        x_right      = x_near - lut_linew[PlotIdxTonic] * ui_scale;    // - split line width
+        x_rullbl     = x_near + rul_margin * ui_scale;
         align_rullbl = TextAlignLeft;
     }
     else
     {
         x_near       = rullbl_sz.x;
         x_far        = wsize.x;
-        x_left       = x_near + lut_linew[PlotIdxTonic] * scale;
-        x_right      = x_far - lut_linew[PlotIdxPitch] * scale / 2;
-        x_rullbl     = x_near - rul_margin * scale;
+        x_left       = x_near + lut_linew[PlotIdxTonic] * ui_scale;
+        x_right      = x_far - lut_linew[PlotIdxPitch] * ui_scale / 2;
+        x_rullbl     = x_near - rul_margin * ui_scale;
         align_rullbl = TextAlignRight;
         notch *= -1.0f;
     }
     x_center = std::roundf((x_near + x_far) / 2.0f);
 
-    float x_span = (x_right - x_left) / scale;
+    float x_span = (x_right - x_left) / ui_scale;
     // limit offset
     if (x_off_reset)
     {
@@ -2156,7 +2170,7 @@ void Draw()
     x_zoom_min = std::max(PlotXZoomMin, x_span / (float)(Analyzer::PITCH_BUF_SIZE - 2)); // limit zoom by pitch buffer size; ignore current pitch buffer element
     if (x_zoom < x_zoom_min)
         x_zoom = x_zoom_min;
-    float x_zoom_scaled = x_zoom * scale;
+    float x_zoom_scaled = x_zoom * ui_scale;
 
     // horizontal grid / metronome
     if (tempo_grid || metronome) {
@@ -2169,14 +2183,14 @@ void Draw()
             float trig_dist = 7.0f - (float)tempo_val / 60.0f;
             float trig = (std::fmodf(offset + trig_dist, intervals_per_bpm) - trig_dist) / trig_dist;
             if (trig <= 1.0f)
-                draw_list->AddRect(ImVec2(0.0f, 0.0f), ImVec2(wsize.x, wsize.y), plot_colors[PlotIdxMetronome], 0.0f, ImDrawFlags_None, (1.0f - std::fabs(trig)) * 20.0f * scale);
+                draw_list->AddRect(ImVec2(0.0f, 0.0f), ImVec2(wsize.x, wsize.y), plot_colors[PlotIdxMetronome], 0.0f, ImDrawFlags_None, (1.0f - std::fabs(trig)) * 20.0f * ui_scale);
         }
 
         if (tempo_grid) {
             offset = x_right - offset * x_zoom_scaled;
             while(offset > x_left) {
                 draw_list->AddLine(ImVec2(offset, 0.0f), ImVec2(offset, wsize.y), plot_colors[PlotIdxTempo],
-                    lut_linew[PlotIdxTempo + (tempo_meter > 0 && beat_cnt % tempo_meter == 0)] * scale);
+                    lut_linew[PlotIdxTempo + (tempo_meter > 0 && beat_cnt % tempo_meter == 0)] * ui_scale);
                 offset -=  x_zoom_scaled * intervals_per_bpm;
                 beat_cnt--;
             }
@@ -2197,7 +2211,7 @@ void Draw()
 
         // line
         if (semi_lines || line_idx)
-            draw_list->AddLine(ImVec2(x_far, y), ImVec2(x_near + notch * !(line_idx - 1), y), plot_colors[line_idx], lut_linew[line_idx] * scale);
+            draw_list->AddLine(ImVec2(x_far, y), ImVec2(x_near + notch * !(line_idx - 1), y), plot_colors[line_idx], lut_linew[line_idx] * ui_scale);
 
         // label
         if (semi_lbls || label_idx)
@@ -2206,12 +2220,12 @@ void Draw()
     ImGui::PopFont();
 
     // draw split line
-    draw_list->AddLine(ImVec2(x_near, 0), ImVec2(x_near, wsize.y), plot_colors[PlotIdxTonic], lut_linew[PlotIdxTonic] * scale);
+    draw_list->AddLine(ImVec2(x_near, 0), ImVec2(x_near, wsize.y), plot_colors[PlotIdxTonic], lut_linew[PlotIdxTonic] * ui_scale);
 
     // plot the data
     {
         int max_cnt = (int)((x_right - x_left) / x_zoom_scaled) + 1; // include the start point
-        float line_w =  lut_linew[PlotIdxPitch] * scale;
+        float line_w =  lut_linew[PlotIdxPitch] * ui_scale;
         ImU32 color = plot_colors[PlotIdxPitch];
         float pp = -1.0f;
         ImVec2 pv;
@@ -2256,19 +2270,19 @@ void Draw()
 
         // display note
         ImGui::PushFont(font_pitch);
-        AddNoteLabel(ImVec2(x_center + x_peak_off, top_feat_pos * scale), TextAlignRight, TextAlignBottom,
+        AddNoteLabel(ImVec2(x_center + x_peak_off, top_feat_pos * ui_scale), TextAlignRight, TextAlignBottom,
                          note, 1 << (int)!!lut_number[1][note], octave, plot_colors[PlotIdxNote], draw_list);
         ImGui::PopFont();
         // draw tuner
         if (show_tuner) {
-            float y_tuner = (top_feat_pos + 6.0f) * scale;
-            float y_long  = y_tuner + 7.0f * scale;
-            float y_short = y_tuner + 4.0f * scale;
-            float zoom = 1.75f * scale;
+            float y_tuner = (top_feat_pos + 6.0f) * ui_scale;
+            float y_long  = y_tuner + 7.0f * ui_scale;
+            float y_short = y_tuner + 4.0f * ui_scale;
+            float zoom = 1.75f * ui_scale;
             // triangle mark
-            draw_list->AddTriangleFilled(ImVec2(x_center - 6.0f * scale, top_feat_pos * scale),
-                                         ImVec2(x_center + 6.0f * scale, top_feat_pos * scale),
-                                         ImVec2(x_center, y_tuner - 1.0f * scale),
+            draw_list->AddTriangleFilled(ImVec2(x_center - 6.0f * ui_scale, top_feat_pos * ui_scale),
+                                         ImVec2(x_center + 6.0f * ui_scale, top_feat_pos * ui_scale),
+                                         ImVec2(x_center, y_tuner - 1.0f * ui_scale),
                                          plot_colors[PlotIdxTuner]);
 
             ImGui::PushFont(font_tuner);
@@ -2277,7 +2291,7 @@ void Draw()
             ImU32 color = plot_colors[PlotIdxTuner];
             for ( ; (float)pos <= stop; pos += 10) {
                 float x_pos = std::roundf(x_center + ((float)pos - c_mean) * zoom);
-                float linew = lut_linew[PlotIdxSemitone] * scale;
+                float linew = lut_linew[PlotIdxSemitone] * ui_scale;
                 switch (pos % 100) {
                 case 0: {
                     int note = pos % 1200 / 100;
@@ -2287,7 +2301,7 @@ void Draw()
                          note, 1 - !!lut_number[1][note], -1, color, draw_list);
 
                     // long thick tick
-                    linew = lut_linew[PlotIdxSupertonic] * scale;
+                    linew = lut_linew[PlotIdxSupertonic] * ui_scale;
                 } // fall through
                 case 50:
                     // long thin tick
@@ -2302,7 +2316,7 @@ void Draw()
         }
 
         if (show_freq)
-            AddFmtTextAligned(ImVec2(x_center + x_peak_off * 2.5f, top_feat_pos * scale), TextAlignLeft, TextAlignBottom,
+            AddFmtTextAligned(ImVec2(x_center + x_peak_off * 2.5f, top_feat_pos * ui_scale), TextAlignLeft, TextAlignBottom,
                 plot_colors[PlotIdxTuner], draw_list, "%4.0fHz", f_mean);
     }
 }
@@ -2407,7 +2421,7 @@ void SettingsWindow()
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Volume threshold");
         ImGui::SameLine();
-        if (ImGui::SliderFloat("##vol_thres", &vol_thres, VolThresMin, VolThresMax, "%.2f"))
+        if (ImGui::SliderFloat("##VolumeThreshold", &vol_thres, VolThresMin, VolThresMax, "%.2f"), ImGuiSliderFlags_AlwaysClamp)
             analyzer.set_threshold((double)vol_thres);
     }
 
@@ -2439,7 +2453,7 @@ void SettingsWindow()
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(oct_offset == OctOffsetA4 ? "Calibration A4 =" : "Calibration A3 =");
         ImGui::SameLine();
-        if (ImGui::SliderFloat("##calibration", &calibration, PitchCalibMin, PitchCalibMax, "%.1f Hz"))
+        if (ImGui::SliderFloat("##Calibration", &calibration, PitchCalibMin, PitchCalibMax, "%.1f Hz"), ImGuiSliderFlags_AlwaysClamp)
             UpdateCalibration();
     }
 
@@ -2464,7 +2478,7 @@ void SettingsWindow()
         ImGui::Checkbox("Enable autoscroll", &autoscroll);
         if (!autoscroll)
             ImGui::BeginDisabled();
-        ImGui::SameLine(); ImGui::SliderInt("##velocity", &y_ascrl_vel, PlotAScrlVelMin, PlotAScrlVelMax, "velocity = %d");
+        ImGui::SameLine(); ImGui::SliderInt("##ScrollVelocity", &y_ascrl_vel, PlotAScrlVelMin, PlotAScrlVelMax, "velocity = %d", ImGuiSliderFlags_AlwaysClamp);
         if (!autoscroll)
             ImGui::EndDisabled();
     }
@@ -2477,7 +2491,7 @@ void SettingsWindow()
         ImGui::SameLine(); ImGui::Checkbox("Frequency", &show_freq);
         ImGui::SameLine();
         int samples = (int)f_peak_buf.size();
-        if (ImGui::SliderInt("##smoothing", &samples, TunerSmoothMin, TunerSmoothMax, "smoothing = %d"))
+        if (ImGui::SliderInt("##Smoothing", &samples, TunerSmoothMin, TunerSmoothMax, "smoothing = %d"), ImGuiSliderFlags_AlwaysClamp)
             UpdatePeakBuf(samples);
         ImGui::Unindent();
     }
@@ -2504,13 +2518,23 @@ void SettingsWindow()
 
     // UI behavior
     {
-        ImGui::TextUnformatted("UI controls");
+        ImGui::TextUnformatted("UI behavior");
         ImGui::Indent();
         ImGui::Checkbox("HOLD", &but_hold);
         ImGui::SameLine(); ImGui::Checkbox("Scale", &but_scale);
         ImGui::SameLine(); ImGui::Checkbox("Tempo", &but_tempo);
         ImGui::SameLine(); ImGui::Checkbox("Device selector", &but_devices);
         ImGui::Checkbox("Click2Hold", &click_hold);
+        if (ImGui::Checkbox("Custom scaling", &custom_scaling))
+            ImGui::AppReconfigure = true;
+        if (!custom_scaling)
+            ImGui::BeginDisabled();
+        ImGui::SameLine(); ImGui::SliderFloat("##CustomScale", &custom_scale, CustomScaleMin, CustomScaleMax, "%.1f", ImGuiSliderFlags_AlwaysClamp);
+        // update configuration only after user is done with the setting
+        if (ImGui::IsItemDeactivatedAfterEdit())
+            ImGui::AppReconfigure = true;
+        if (!custom_scaling)
+            ImGui::EndDisabled();
         ImGui::Unindent();
     }
 
@@ -2525,9 +2549,9 @@ void SettingsWindow()
     {
         ImGui::TextUnformatted("Record directory");
         ImGui::Indent();
-        ImGui::SetNextItemWidth(0.0f - ImGui::GetFrameHeight() - font_def_sz / 8 * scale);
+        ImGui::SetNextItemWidth(0.0f - ImGui::GetFrameHeight() - font_def_sz / 8 * ui_scale);
         ImGui::InputText("##RecordDir", record_dir, IM_ARRAYSIZE(record_dir), ImGuiInputTextFlags_ElideLeft);
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(font_def_sz / 8 * scale, font_def_sz / 8 * scale));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(font_def_sz / 8 * ui_scale, font_def_sz / 8 * ui_scale));
         ImGui::SameLine();
         ImGui::PopStyleVar();
         if (ImGui::Button("...##RecordDirBrowse", ImVec2(ImGui::GetFrameHeight(), 0.0f)))
@@ -2599,13 +2623,7 @@ void SettingsWindow()
 // Access from Dear ImGui Demo -> Tools -> About
 //-----------------------------------------------------------------------------
 
-void URLwidget(const char *URL, const char *text, const char *descr)
-{
-    if (ImGui::Link(text, URL))
-        ImGui::SysOpen(URL);
-    ImGui::SameLine(); ImGui::TextUnformatted(descr);
-}
-
+#define LINK(url, text, descr) do { ImGui::TextLinkOpenURL(text, url); ImGui::SameLine(); ImGui::TextUnformatted(descr); } while(0)
 void ImGui::ShowAboutWindow(bool* p_open)
 {
     if (!HandlePopupState("About imVocalPitchMonitor", wnd_about, ImGui::GetMainViewport()->GetCenter(), ImVec2(0.5f, 0.5f)))
@@ -2631,8 +2649,7 @@ void ImGui::ShowAboutWindow(bool* p_open)
     ImGui::SameLine(); ImGui::TextUnformatted(" to PC of ");
     ImGui::SameLine();
     ImGui::PopStyleVar();
-    if (ImGui::Link("VocalPitchMonitor", VocalPithMonitorURL))
-        ImGui::SysOpen(VocalPithMonitorURL);
+    ImGui::TextLinkOpenURL("VocalPitchMonitor", VocalPithMonitorURL);
     ImGui::SameLine();
     ImGui::TextUnformatted("Android app");
     ImGui::TextUnformatted("by Tadao Yamaoka.");
@@ -2640,17 +2657,17 @@ void ImGui::ShowAboutWindow(bool* p_open)
 
     ImGui::TextUnformatted("Other software used by this project:");
     ImGui::Indent();
-    URLwidget(ImGuiURL, "ImGui",  "© Omar Cornut" );
-    URLwidget(miniaudioURL, "miniaudio",  "© David Reid" );
+    LINK(ImGuiURL, "ImGui",  "© Omar Cornut" );
+    LINK(miniaudioURL, "miniaudio",  "© David Reid" );
  #if defined(HAVE_OPUS)
-    URLwidget(xiphURL, "libogg, opus, opusfile",  "© Xiph.Org Foundation" );
+    LINK(xiphURL, "libogg, opus, opusfile",  "© Xiph.Org Foundation" );
  #endif // HAVE_OPUS
-    URLwidget(fft4gURL, "fft4g",  "© Takuya OOURA" );
-    URLwidget(simpleiniURL, "simpleini",  "© Brodie Thiesfield" );
-    URLwidget(portable_file_dialogsURL, "portable-file-dialogs",  "© Sam Hocevar" );
-    URLwidget(poplURL, "Program Options Parser Library",  "© Johannes Pohl" );
-    URLwidget(DejaVuURL, "DejaVu fonts",  "© DejaVu fonts team" );
-    URLwidget(Font_AwesomeURL, "Font Awesome",  "© Fonticons, Inc." );
+    LINK(fft4gURL, "fft4g",  "© Takuya OOURA" );
+    LINK(simpleiniURL, "simpleini",  "© Brodie Thiesfield" );
+    LINK(portable_file_dialogsURL, "portable-file-dialogs",  "© Sam Hocevar" );
+    LINK(poplURL, "Program Options Parser Library",  "© Johannes Pohl" );
+    LINK(DejaVuURL, "DejaVu fonts",  "© DejaVu fonts team" );
+    LINK(Font_AwesomeURL, "Font Awesome",  "© Fonticons, Inc." );
     ImGui::Unindent();
     ImGui::TextUnformatted("Command line options:");
     ImGui::Indent();

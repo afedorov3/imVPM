@@ -7,4 +7,3 @@ assets/reverse
 assets/test-data
 assets/*.cmd
 build
-src/imgui/backends/sdl2_vulkan.cpp

@@ -400,7 +400,7 @@ public:
     // get error, if any, with optional description
     // return value indicates if the request was successful
     // can block
-    bool getError(int *error, const char **description);
+    bool getError(int *error = nullptr, const char **description = nullptr);
 
     // utility
     // framesToTime: convert position in PCM frames to time string

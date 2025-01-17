@@ -29,16 +29,16 @@ static UINT                     g_ResizeWidth = 0, g_ResizeHeight = 0;
 static ID3D11RenderTargetView*  g_mainRenderTargetView = nullptr;
 static HWND                     g_Window = nullptr;
 static UINT_PTR                 g_idGlobalRefreshTimer = 0;
+static ImGui::AppDragAndDropCb  g_DropCb = nullptr;
 
        ImRect                   ImGui::SysWndPos  = ImRect(100, 100, 1280, 800);
        ImRect                   ImGui::SysWndMinMax  = ImRect(0, 0, 0, 0);
        ImVec4                   ImGui::SysWndBgColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
        bool                     ImGui::SysWndFocus = false;
        ImGui::WindowState       ImGui::SysWndState = ImGui::WSNormal;
+       float                    ImGui::SysWndScaling = 1.0f;
        bool                     ImGui::AppExit = false;
        bool                     ImGui::AppReconfigure = false;
-       ImU32                    ImGui::DPI = USER_DEFAULT_SCREEN_DPI;
- const ImU32                    ImGui::defaultDPI = USER_DEFAULT_SCREEN_DPI;
 
 // system function pointers
 static BOOL (WINAPI * ptrEnableNonClientDpiScaling) (HWND) = nullptr;
@@ -56,6 +56,7 @@ static UINT GetDPI (HWND hWnd);
 static void CALLBACK GuiChangesCoalescingTimer (HWND hWnd, UINT, UINT_PTR id, DWORD);
 static LRESULT OnDpiChange(WPARAM dpi, const RECT * r);
 static std::unique_ptr<wchar_t[]> utf8_to_wchar(const char *utf8str);
+static std::unique_ptr<char[]> wchar_to_utf8(const wchar_t *wstr);
 static std::unique_ptr<char[]> argv_wchar_to_utf8(int argc, wchar_t const *const *wargv);
 
 // Convenient loading function, see WinMain
@@ -104,6 +105,8 @@ int wmain(int argc, wchar_t** wargv)
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Main Window", nullptr };
     ::RegisterClassExW(&wc);
     g_Window = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui main window", WS_OVERLAPPEDWINDOW, ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h, nullptr, nullptr, wc.hInstance, nullptr);
+    if (g_Window == nullptr)
+        return -1;
 
     // Initialize Direct3D
     if (!CreateDeviceD3D(g_Window))
@@ -124,7 +127,7 @@ int wmain(int argc, wchar_t** wargv)
     ::ShowWindow(g_Window, cmdshow);
     ::UpdateWindow(g_Window);
 
-    ImGui::DPI = (ImU32) GetDPI(g_Window);
+    ImGui::SysWndScaling = (float)GetDPI(g_Window) / USER_DEFAULT_SCREEN_DPI;
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -229,6 +232,8 @@ int wmain(int argc, wchar_t** wargv)
 
     // Finalize App
     ImGui::AppDestroy();
+
+    ImGui::SysRejectFiles();
 
     // Cleanup
     ImGui_ImplDX11_Shutdown();
@@ -381,6 +386,23 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_DWMCOMPOSITIONCHANGED:
         g_idGlobalRefreshTimer = SetTimer (nullptr, g_idGlobalRefreshTimer, 500, GuiChangesCoalescingTimer);
         return 0;
+    case WM_DROPFILES:
+        {
+            HDROP hDrop = (HDROP)wParam;
+            UINT fcnt = DragQueryFileW(hDrop, 0xFFFFFFFF, NULL, 0);
+            for (UINT i = 0; i < fcnt; i++)
+            {
+                UINT len = DragQueryFileW(hDrop, i, NULL, 0);
+                if (len > 0)
+                {
+                    std::unique_ptr<wchar_t[]> wfile(new wchar_t[len + 1]);
+                    UINT ret = DragQueryFileW(hDrop, i, wfile.get(), len + 1);
+                    auto file = wchar_to_utf8(wfile.get());
+                    if (g_DropCb) g_DropCb(file.get());
+                }
+            }
+        }
+        return 0;
     }
     return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }
@@ -406,8 +428,9 @@ ImU32 GetDPI(HWND hWnd)
         auto dpi = GetDeviceCaps (hDC, LOGPIXELSX);
         ReleaseDC (hWnd, hDC);
         return (ImU32) dpi;
-    } else
-        return USER_DEFAULT_SCREEN_DPI;
+    }
+
+    return USER_DEFAULT_SCREEN_DPI;
 }
 
 void CALLBACK GuiChangesCoalescingTimer(HWND hWnd, UINT, UINT_PTR id, DWORD)
@@ -418,10 +441,10 @@ void CALLBACK GuiChangesCoalescingTimer(HWND hWnd, UINT, UINT_PTR id, DWORD)
     // ignore if DPI awareness API is available
     if (pfnSetThreadDpiAwarenessContext == nullptr)
     {
-        ImU32 dpi = GetDPI(hWnd);
-        if (ImGui::DPI != dpi)
+        float scaling = (float)GetDPI(hWnd) / USER_DEFAULT_SCREEN_DPI;
+        if (ImGui::SysWndScaling != scaling)
         {
-            ImGui::DPI = dpi;
+            ImGui::SysWndScaling = scaling;
             ImGui::AppReconfigure = true;
         }
     }
@@ -429,11 +452,11 @@ void CALLBACK GuiChangesCoalescingTimer(HWND hWnd, UINT, UINT_PTR id, DWORD)
 
 LRESULT OnDpiChange(WPARAM dpi, const RECT * r)
 {
-    dpi = LOWORD (dpi);
+    float scaling = (float)(LOWORD (dpi)) / USER_DEFAULT_SCREEN_DPI;
 
-    if (ImGui::DPI != dpi)
+    if (ImGui::SysWndScaling != scaling)
     {
-        ImGui::DPI = (ImU32) dpi;
+        ImGui::SysWndScaling = scaling;
         ImGui::AppReconfigure = true;
     }
 
@@ -450,6 +473,18 @@ static std::unique_ptr<wchar_t[]> utf8_to_wchar(const char *utf8str)
     if (buf == nullptr)
         return nullptr;
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8str, -1, buf.get(), bufsz);
+    return buf;
+}
+
+static std::unique_ptr<char[]> wchar_to_utf8(const wchar_t *wstr)
+{
+    int bufsz = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wstr, -1, nullptr, 0, NULL, NULL);
+    if (bufsz == 0)
+        return nullptr;
+    auto buf = std::unique_ptr<char[]>(new char[bufsz]());
+    if (buf == nullptr)
+        return nullptr;
+    WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wstr, -1, buf.get(), bufsz, NULL, NULL);
     return buf;
 }
 
@@ -506,8 +541,6 @@ static int ShellExecute2errno(HINSTANCE hcode)
 // set native window title
 void ImGui::SysSetWindowTitle(const char *title)
 {
-    if (g_Window == nullptr) return;
-
     auto newtitle = utf8_to_wchar(title);
     if (newtitle == nullptr) return;
 
@@ -545,4 +578,19 @@ ImS32 ImGui::SysOpen(const char *resource)
     if (wresource == nullptr) return EINVAL;
 
     return ShellExecute2errno(::ShellExecuteW(g_Window, L"open", wresource.get(), nullptr, nullptr, SW_SHOWNORMAL));
+}
+
+void ImGui::SysAcceptFiles(AppDragAndDropCb cb)
+{
+    if (cb == nullptr)
+        return SysRejectFiles();
+
+    g_DropCb = cb;
+    DragAcceptFiles(g_Window, TRUE);
+}
+
+void ImGui::SysRejectFiles()
+{
+    DragAcceptFiles(g_Window, FALSE);
+    g_DropCb = nullptr;
 }
