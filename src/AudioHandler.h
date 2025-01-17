@@ -86,10 +86,6 @@ public:
 
         ErrorLast
     };
-    static constexpr const char *ErrorDescriptions[] = {
-        "Invalid command at the current state",
-        "Invalid command argument"
-    };
 
     enum NotificationEvent {
         EventPlayFile   = 0x01,
@@ -226,9 +222,9 @@ public:
         constexpr bool canSeek()     { return  (value & (StateSeek|StateMask)) == StatePlayback; }
 
         // modifiers
-        constexpr State &operator=(unsigned int newState) { value = newState; return *this; }
-        constexpr State &operator|=(unsigned int set)     { value |= set; return *this; }
-        constexpr State &operator&=(unsigned int reset)   { value &= reset; return *this; }
+        State &operator=(unsigned int newState) { value = newState; return *this; }
+        State &operator|=(unsigned int set)     { value |= set; return *this; }
+        State &operator&=(unsigned int reset)   { value &= reset; return *this; }
 
         // access
         constexpr const unsigned int operator()() const { return value; }

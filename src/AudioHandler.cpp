@@ -558,6 +558,10 @@ bool AudioHandler::getState(State &state, uint64_t *lenInPcmFrames, uint64_t *po
     return true;
 }
 
+static const char *ErrorDescriptions[] = {
+    "Invalid command at the current state",
+    "Invalid command argument"
+};
 bool AudioHandler::getError(int *error, const char **description)
 {
     std::unique_lock<std::timed_mutex> lock(pc.mutex, std::chrono::milliseconds(10));

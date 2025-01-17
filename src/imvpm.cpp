@@ -82,6 +82,7 @@ Index of this file:
 
 // System includes
 #include <cstdio>           // vsnprintf, sscanf, printf
+#include <cmath>            // sin, fmod, fabs
 #include <algorithm>        // min, max
 #include <vector>
 #if !defined(_MSC_VER) || _MSC_VER >= 1800
@@ -1383,6 +1384,7 @@ bool ImGui::AppConfig()
         0xF101, 0xF101, // angles-right
         0xF129, 0xF131, // info, microphone, microphone-slash
         0xF1DE, 0xF1DE, // sliders
+        0xF52B, 0xF52B, // door-open
         0xF6A9, 0xF6A9, // volume-xmark
         0
     };
@@ -1647,6 +1649,9 @@ void Menu()
             ShowWindow(wnd_settings);
         if (ImGui::Selectable(ICON_FA_INFO " About"))
             ShowWindow(wnd_about);
+        ImGui::Separator();
+        if (ImGui::Selectable(ICON_FA_DOOR_OPEN " Exit"))
+            ImGui::AppExit = true;
 
         ImGui::EndPopup();
     }
@@ -1752,7 +1757,7 @@ void AudioControl()
         ImColor color = UI_colors[UIIdxRecord];
         float mul = 1.0f - 0.5f * !can_record;
         if (ah_state.isRecording())
-            mul *= std::sinf((float)ImGui::GetTime() * (float)M_PI * 2.0f) * 0.2f + 0.8f;
+            mul *= std::sin((float)ImGui::GetTime() * (float)M_PI * 2.0f) * 0.2f + 0.8f;
         color.Value.x *= mul;
         color.Value.y *= mul;
         color.Value.z *= mul;
@@ -2181,7 +2186,7 @@ void Draw()
 
         if (metronome) {
             float trig_dist = 7.0f - (float)tempo_val / 60.0f;
-            float trig = (std::fmodf(offset + trig_dist, intervals_per_bpm) - trig_dist) / trig_dist;
+            float trig = (std::fmod(offset + trig_dist, intervals_per_bpm) - trig_dist) / trig_dist;
             if (trig <= 1.0f)
                 draw_list->AddRect(ImVec2(0.0f, 0.0f), ImVec2(wsize.x, wsize.y), plot_colors[PlotIdxMetronome], 0.0f, ImDrawFlags_None, (1.0f - std::fabs(trig)) * 20.0f * ui_scale);
         }
@@ -2359,7 +2364,7 @@ void ProcessLog()
         }
 
         ImU32 color = ImGui::GetColorU32(msg_colors[entry.Lvl],
-                alpha * std::min(faderate - std::fabsf(std::fmodf((float)(MsgTimeout[curMsg] - time) * faderate * 2.0f / msgTimeoutSec, faderate * 2.0f) - faderate), 1.0f));
+                alpha * std::min(faderate - std::fabs(std::fmod((float)(MsgTimeout[curMsg] - time) * faderate * 2.0f / msgTimeoutSec, faderate * 2.0f) - faderate), 1.0f));
         AddTextAligned(pos, TextAlignCenter, TextAlignMiddle, color, draw_list, entry.Msg.get());
 
         pos.y -= font_def_sz * 1.5f;

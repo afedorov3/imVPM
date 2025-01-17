@@ -1,10 +1,10 @@
-cmake_minimum_required(VERSION 3.27)
+cmake_minimum_required(VERSION 3.15)
 project(imVocalPitchMonitor DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
 
 # build tools required: CMake, git, make/ninja, C++11 compiler (Clang/GCC/MSVC are tested),
 #                       patch (on windows you'll get it with git),
 #        Windows build: Windows SDK and MSVC libs
-#          Linux build: SDL2, vulkan, kdialog / zenity, opusfile [optional]
+#          Linux build: SDL2, vulkan, kdialog / zenity, opusfile [optional], development versions
 
 if (NOT DEFINED OPUS_SUPPORT)
   set(OPUS_SUPPORT "yes")
@@ -32,6 +32,8 @@ if (NOT DEFINED IMVPM_GRAPHICS)
   endif()
 endif()
 
+set (CMAKE_CXX_STANDARD 11)
+
 find_program(PATCH patch)
 if (${PATCH} STREQUAL "PATCH-NOTFOUND")
   message(FATAL_ERROR "patch utility not available")
@@ -42,6 +44,10 @@ option(BUILD_EXAMPLE "" OFF)
 option(BUILD_TESTS "" OFF)
 
 include_directories(src)
+
+if (NOT WIN32)
+  find_package(PkgConfig)
+endif()
 
 if (VENDORED_BUILD)
 ###### local dependencies
@@ -103,12 +109,6 @@ if (VENDORED_BUILD)
       add_subdirectory(${LIBOGG_SRC} EXCLUDE_FROM_ALL)
       add_subdirectory(${OPUS_SRC} EXCLUDE_FROM_ALL)
       add_subdirectory(${OPUSFILE_SRC} EXCLUDE_FROM_ALL)
-
-    else()
-
-      find_package(PkgConfig)
-      pkg_search_module(opusfile REQUIRED opusfile)
-      include_directories(${opusfile_INCLUDEDIR}/opus)
 
     endif()
 
@@ -213,12 +213,6 @@ else()
 
       FetchContent_MakeAvailable(libogg opus opusfile)
 
-    else()
-
-      find_package(PkgConfig)
-      pkg_search_module(opusfile REQUIRED opusfile)
-      include_directories(${opusfile_INCLUDEDIR}/opus)
-
     endif()
 
   endif()
@@ -291,7 +285,14 @@ set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
 target_include_directories(imvpm PRIVATE src/imgui ${FFT4G_SRC} ${MINIAUDIO_SRC} ${IMGUI_SRC} ${IMGUI_SRC}/backends ${FONTS_SRC} ${PFD_SRC} ${SIMPLEINI_SRC} ${POPL_SRC}/include)
 if (OPUS_SUPPORT)
   target_compile_definitions(imvpm PRIVATE HAVE_OPUS)
-  target_link_libraries(imvpm PRIVATE opusfile)
+  if (WIN32)
+    target_include_directories(imvpm PRIVATE ${OPUSFILE_SRC}/include)
+    target_link_libraries(imvpm PRIVATE opusfile)
+  else()
+    pkg_search_module(OPUSFILE REQUIRED opusfile)
+    target_include_directories(imvpm PRIVATE ${OPUSFILE_INCLUDE_DIRS})
+    target_link_libraries(imvpm PRIVATE ${OPUSFILE_LIBRARIES})
+  endif()
 endif()
 
 ###
@@ -324,12 +325,15 @@ endif()
 if(${IMVPM_BACKEND} STREQUAL "win32")
   target_link_libraries(imvpm PRIVATE Dwmapi)
 elseif(${IMVPM_BACKEND} STREQUAL "sdl2")
-  include_directories(/usr/include/SDL2)
-  target_link_libraries(imvpm PRIVATE SDL2)
+  pkg_search_module(SDL2 REQUIRED sdl2)
+  include_directories(${SDL2_INCLUDE_DIRS})
+  target_link_libraries(imvpm PRIVATE ${SDL2_LIBRARIES})
 endif()
 
 if(${IMVPM_GRAPHICS} STREQUAL "vulkan")
-  target_link_libraries(imvpm PRIVATE vulkan)
+  pkg_search_module(VULKAN REQUIRED vulkan)
+  include_directories(${VULKAN_INCLUDE_DIRS})
+  target_link_libraries(imvpm PRIVATE ${VULKAN_LIBRARIES})
 elseif(${IMVPM_GRAPHICS} STREQUAL "dx11")
   target_link_libraries(imvpm PRIVATE d3d11 d3dcompiler)
 endif()

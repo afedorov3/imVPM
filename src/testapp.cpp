@@ -208,7 +208,7 @@ int main(int argc, char **argv)
                 create_pitch_map(ctx, nullptr);
             std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
             printf("%.2f events/s\n", (double)ctx.totalPCMFrameCount / Analyzer::ANALYZE_INTERVAL * cnt *
-                1'000'000UL / std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count());
+                1000000UL / std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count());
         } break;
         case 'd':
         {
