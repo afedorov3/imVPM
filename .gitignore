@@ -6,4 +6,5 @@ assets/ah
 assets/reverse
 assets/test-data
 assets/*.cmd
+bin
 build

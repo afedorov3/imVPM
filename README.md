@@ -1,5 +1,6 @@
 # [VocalPitchMonitor](https://play.google.com/store/apps/details?id=com.tadaoyamaoka.vocalpitchmonitor) port to PC
-It is a **reverse engineered** port of the original APK. All the heavy lifting code - audio analyzing and data plotting, belongs to the original author - **Tadao Yamaoka**.
+It is a **reverse engineered** port of the original APK.  
+All the heavy lifting code - audio analyzing and data plotting, belongs to the original author - **Tadao Yamaoka**.  
 Without his hard work this project wouldn't be possible.
 
 Other software used to create this project:

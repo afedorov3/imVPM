@@ -1505,7 +1505,7 @@ void ImGui::AppNewFrame()
         ImGui::PopFont();
     }
 
-    // process file operations
+    // process dialog operations
     if (open_file_dlg && open_file_dlg->ready(0))
     {
         auto files = open_file_dlg->result();

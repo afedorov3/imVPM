@@ -1,32 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(imVocalPitchMonitor DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
 
-# build tools required: CMake, git, ninja, C++11 compiler (Clang/GCC/MSVC are tested),
-#                       patch (on windows you'll get it with git, just
-#                         set PATH=%PATH%;%PROGRAMFILES%\Git\usr\bin
-#                       prior to configure)
-#        Windows build: Windows SDK and MSVC libs
-#                       Windows 7 and Windows 11 builds are tested
-#          Linux build: SDL2, vulkan, kdialog / zenity, opusfile [optional], development versions
-#                       Debian 12 and Arch builds are tested
-#
-# to configure run:
-#   cmake . -B build -GNinja -DCMAKE_BUILD_TYPE=Release
-# you could also specify -DVENDORED_BUILD=yes to use local dependency sources
-# that you provide in the external directory. list of required dependencies:
-#   *dir name*    *URL*
-#   imgui         https://github.com/ocornut/imgui
-#   miniaudio     https://github.com/mackron/miniaudio
-#   fft4g         https://github.com/YSRKEN/Ooura-FFT-Library-by-Other-Language
-#   simpleini     https://github.com/brofield/simpleini
-#   pfd           https://github.com/samhocevar/portable-file-dialogs
-#   popl          https://github.com/badaix/popl
-#   libogg        https://github.com/xiph/ogg
-#   opus          https://github.com/xiph/opus
-#   opusfile      https://github.com/xiph/opusfile
-# if configure succedes, to start the build run:
-#   cmake --build build
-
 if (NOT DEFINED OPUS_SUPPORT)
   set(OPUS_SUPPORT "yes")
 endif()
@@ -67,7 +41,7 @@ option(BUILD_TESTS "" OFF)
 include_directories(src)
 
 if (NOT WIN32)
-  find_package(PkgConfig)
+  find_package(PkgConfig REQUIRED)
 endif()
 
 if (VENDORED_BUILD)
@@ -139,9 +113,11 @@ if (VENDORED_BUILD)
 else()
 ###### FetchContent
 
-  execute_process(
-    COMMAND ${CMAKE_COMMAND} -E echo ===== MAKE SURE you have git core.autocrlf set to false and core.eol set to lf =====
-  )
+  if (WIN32)
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -E echo ===== MAKE SURE you have git core.autocrlf set to false and core.eol set to lf =====
+    )
+  endif()
 
   set(IMGUI_SRC ${CMAKE_BINARY_DIR}/_deps/imgui-src)
   set(MINIAUDIO_SRC ${CMAKE_BINARY_DIR}/_deps/miniaudio-src)
