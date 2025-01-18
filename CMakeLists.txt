@@ -141,42 +141,42 @@ else()
   FetchContent_Declare(
     imgui
     GIT_REPOSITORY  https://github.com/ocornut/imgui.git
-    GIT_TAG         master
+    GIT_TAG         80c9cd1
     DOWNLOAD_EXTRACT_TIMESTAMP yes
   )
 
   FetchContent_Declare(
     miniaudio
     GIT_REPOSITORY  https://github.com/mackron/miniaudio.git
-    GIT_TAG         master
+    GIT_TAG         4a5b74b
     DOWNLOAD_EXTRACT_TIMESTAMP yes
   )
 
   FetchContent_Declare(
     fft4g
     GIT_REPOSITORY  https://github.com/YSRKEN/Ooura-FFT-Library-by-Other-Language.git
-    GIT_TAG         master
+    GIT_TAG         4a2dccf
     DOWNLOAD_EXTRACT_TIMESTAMP yes
   )
 
   FetchContent_Declare(
     simpleini
     GIT_REPOSITORY  https://github.com/brofield/simpleini.git
-    GIT_TAG         master
+    GIT_TAG         6048871
     DOWNLOAD_EXTRACT_TIMESTAMP yes
   )
 
   FetchContent_Declare(
     pfd
     GIT_REPOSITORY  https://github.com/samhocevar/portable-file-dialogs.git
-    GIT_TAG         main
+    GIT_TAG         7f852d8
     DOWNLOAD_EXTRACT_TIMESTAMP yes
   )
 
   FetchContent_Declare(
     popl
     GIT_REPOSITORY  https://github.com/badaix/popl.git
-    GIT_TAG         master
+    GIT_TAG         bda5f43
   )
 
   FetchContent_MakeAvailable(imgui miniaudio fft4g simpleini pfd popl)
@@ -192,19 +192,19 @@ else()
       FetchContent_Declare(
         libogg
         GIT_REPOSITORY  https://github.com/xiph/ogg.git
-        GIT_TAG         master
+        GIT_TAG         db5c7a4
         DOWNLOAD_EXTRACT_TIMESTAMP yes
       )
       FetchContent_Declare(
         opus
         GIT_REPOSITORY  https://github.com/xiph/opus.git
-        GIT_TAG         main
+        GIT_TAG         7db2693
         DOWNLOAD_EXTRACT_TIMESTAMP yes
       )
       FetchContent_Declare(
         opusfile
         GIT_REPOSITORY  https://github.com/xiph/opusfile.git
-        GIT_TAG         master
+        GIT_TAG         9d71834
         DOWNLOAD_EXTRACT_TIMESTAMP yes
       )
 

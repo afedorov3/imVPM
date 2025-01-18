@@ -88,18 +88,18 @@ cmake . -B build -GNinja -DCMAKE_BUILD_TYPE=Release
 CMake will download required dependencies from the GitHub and produce the build configuration.  
 You could also specify **-DVENDORED_BUILD=yes** to use local dependency sources
 that you provide in the **external** directory.  
-list of required dependencies:
-|dir name|URL|
-|--------------:|:----------------------------------|
-|          imgui|https://github.com/ocornut/imgui
-|      miniaudio|https://github.com/mackron/miniaudio
-|          fft4g|https://github.com/YSRKEN/Ooura-FFT-Library-by-Other-Language
-|      simpleini|https://github.com/brofield/simpleini
-|            pfd|https://github.com/samhocevar/portable-file-dialogs
-|           popl|https://github.com/badaix/popl
-|         libogg|https://github.com/xiph/ogg
-|           opus|https://github.com/xiph/opus
-|       opusfile|https://github.com/xiph/opusfile
+List of required dependencies:
+|dir name|URL|commit|version
+|--------------:|:-------------------------------|:---------|:---------|
+|          imgui|https://github.com/ocornut/imgui|80c9cd1|v1.91.7|
+|      miniaudio|https://github.com/mackron/miniaudio|4a5b74b|0.11.21|
+|          fft4g|https://github.com/YSRKEN/Ooura-FFT-Library-by-Other-Language|4a2dccf|
+|      simpleini|https://github.com/brofield/simpleini|6048871|v4.22|
+|            pfd|https://github.com/samhocevar/portable-file-dialogs|7f852d8|0.1.0|
+|           popl|https://github.com/badaix/popl|bda5f43|v1.3.0|
+|         libogg|https://github.com/xiph/ogg|db5c7a4|v1.3.5|
+|           opus|https://github.com/xiph/opus|7db2693|v1.5.2|
+|       opusfile|https://github.com/xiph/opusfile|9d71834|v0.12|
 
 if configure succedes, to start the build run:
 ```
