@@ -183,7 +183,7 @@ typedef std::string pathstr_t;
 // CONSTANTS
 #define WINDOW_TITLE       "imVocalPitchMonitor" // window basic title
 #define CONFIG_FILENAME    "imvpmrc" // config file name
-#define FONT               Font      // symbol names that was given to binary_to_compressed_c when fonts.h being created
+#define FONT               Font      // symbol names that was given to binary_to_compressed_c when font data being created
 #define FONT_NOTES         FontMono
 #define FONT_ICONS_REGULAR FARegular
 #define FONT_ICONS_SOLID   FASolid
@@ -1529,7 +1529,7 @@ void ImGui::AppNewFrame()
         select_folder_dlg = nullptr;
     }
 
-    audiohandler.getState(ah_state, &ah_len, &ah_pos); // cache handler state for a frame
+    audiohandler.getState(ah_state, &ah_len, &ah_pos); // cache handler state for the frame
     audiohandler.getError();                           // discard any errors
 
     // if handler is idling try to restart after a grace period for some number of tries

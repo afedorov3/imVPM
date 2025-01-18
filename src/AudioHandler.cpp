@@ -589,7 +589,7 @@ std::string AudioHandler::framesToTime(uint64_t frames, uint32_t sampleRateHz)
     auto seconds = frames / sampleRateHz % 60;
 
     std::stringstream ss;
-    if (hours) ss << hours << ":";
+    if (hours) ss << hours << ":" << std::setw(2) << std::setfill('0');
     ss << minutes << ":";
     ss << std::setw(2) << std::setfill('0') << seconds;
 
