@@ -102,7 +102,8 @@ int wmain(int argc, wchar_t** wargv)
 
     // Create application window
     //ImGui_ImplWin32_EnableDpiAwareness();
-    WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Main Window", nullptr };
+    HINSTANCE hInstance = GetModuleHandle(nullptr);
+    WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, hInstance, LoadIcon(hInstance, "IDI_MAINFRAME"), nullptr, nullptr, nullptr, L"ImGui Main Window", LoadIcon(hInstance, "IDI_MAINFRAME") };
     ::RegisterClassExW(&wc);
     g_Window = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui main window", WS_OVERLAPPEDWINDOW, ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h, nullptr, nullptr, wc.hInstance, nullptr);
     if (g_Window == nullptr)

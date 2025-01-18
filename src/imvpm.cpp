@@ -2118,7 +2118,7 @@ void Draw()
     c_top = c_pos + wsize.y / c2y_mul;
 
     // do autoscrolling
-    if (autoscroll && !hold && ah_state.isActive() && c_peak >= 0.0 && y_ascrl_grace < ImGui::GetTime()) {
+    if (autoscroll && !hold && ah_state.isActive() && c_peak >= 0.0 && y_ascrl_grace < ImGui::GetTime() && x_offset == 0.0f) {
         static int velocity = 0;
 
         if (c_peak < c_pos + (float)PlotAScrlMar)

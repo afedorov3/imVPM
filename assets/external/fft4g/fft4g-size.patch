@@ -1,0 +1,11 @@
+--- C++/fft4g.cpp.orig	2017-03-17 05:14:25.000000000 +0300
++++ C++/fft4g.cpp	2025-01-18 09:49:37.306832200 +0300
+@@ -20,7 +20,7 @@
+ 
+ fft4g::fft4g(const int n){
+ 	this->n = n;
+-	ip = new int[2 + sqrt(0.5 * n) + 1];
++	ip = new int[2 + (size_t)sqrt(0.5 * n) + 1];
+ 	w = new double[n * 5 / 4];
+ 	ip[0] = 0;
+ }

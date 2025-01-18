@@ -2,9 +2,31 @@ cmake_minimum_required(VERSION 3.15)
 project(imVocalPitchMonitor DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
 
 # build tools required: CMake, git, make/ninja, C++11 compiler (Clang/GCC/MSVC are tested),
-#                       patch (on windows you'll get it with git),
+#                       patch (on windows you'll get it with git, just
+#                         set PATH=%PATH%;%PROGRAMFILES%\Git\usr\bin
+#                       prior to build)
 #        Windows build: Windows SDK and MSVC libs
+#                       Windows 7 build tested
 #          Linux build: SDL2, vulkan, kdialog / zenity, opusfile [optional], development versions
+#                       Debian 12 and Arch builds are tested
+#
+# to configure run:
+#   cmake . -B build -G"Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+# you could also specify -DVENDORED_BUILD=yes to use local dependency sources
+# that you provide in the external directory. list of required dependencies:
+#   *dir name*    *URL*
+#   imgui         https://github.com/ocornut/imgui
+#   miniaudio     https://github.com/mackron/miniaudio
+#   fft4g         https://github.com/YSRKEN/Ooura-FFT-Library-by-Other-Language
+#   simpleini     https://github.com/brofield/simpleini
+#   pfd           https://github.com/samhocevar/portable-file-dialogs
+#   popl          https://github.com/badaix/popl
+#   libogg        https://github.com/xiph/ogg
+#   opus          https://github.com/xiph/opus
+#   opusfile      https://github.com/xiph/opusfile
+# if it succedes, to start the build run:
+#   cmake --build build -j14
+# if it fails on Winodws with the error Bad address, try single threaded build without -j option
 
 if (NOT DEFINED OPUS_SUPPORT)
   set(OPUS_SUPPORT "yes")
@@ -60,7 +82,7 @@ if (VENDORED_BUILD)
   set(OPUS_BUILD ${CMAKE_BINARY_DIR}/external/opus)
   set(OPUSFILE_SRC ${CMAKE_SOURCE_DIR}/external/opusfile)
   set(OPUSFILE_BUILD ${CMAKE_BINARY_DIR}/opusfile)
-  set(FFT4G_SRC ${CMAKE_SOURCE_DIR}/external/fft4g/C++)
+  set(FFT4G_SRC ${CMAKE_SOURCE_DIR}/external/fft4g)
   set(SIMPLEINI_SRC ${CMAKE_SOURCE_DIR}/external/simpleini)
   set(PFD_SRC ${CMAKE_SOURCE_DIR}/external/pfd)
   set(POPL_SRC ${CMAKE_SOURCE_DIR}/external/popl)
@@ -130,7 +152,7 @@ else()
   set(OPUS_BUILD ${CMAKE_BINARY_DIR}/_deps/opus-build)
   set(OPUSFILE_SRC ${CMAKE_BINARY_DIR}/_deps/opusfile-src)
   set(OPUSFILE_BUILD ${CMAKE_BINARY_DIR}/_deps/opusfile-build)
-  set(FFT4G_SRC ${CMAKE_BINARY_DIR}/_deps/fft4g-src/C++)
+  set(FFT4G_SRC ${CMAKE_BINARY_DIR}/_deps/fft4g-src)
   set(SIMPLEINI_SRC ${CMAKE_BINARY_DIR}/_deps/simpleini-src)
   set(PFD_SRC ${CMAKE_BINARY_DIR}/_deps/pfd-src)
   set(POPL_SRC ${CMAKE_BINARY_DIR}/_deps/popl-src)
@@ -225,7 +247,7 @@ endif()
 set(FONTS_SRC ${CMAKE_SOURCE_DIR}/external/fonts)
 
 ###
-### prepare sources
+### prepare the sources
 ###
 
 if(${IMVPM_GRAPHICS} STREQUAL "dx11")
@@ -238,6 +260,11 @@ endif()
 execute_process(
   COMMAND ${PATCH} -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/miniaudio/ma_default_vfs_seek__win32.patch
   WORKING_DIRECTORY ${MINIAUDIO_SRC}
+)
+
+execute_process(
+  COMMAND ${PATCH} -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/fft4g/fft4g-size.patch
+  WORKING_DIRECTORY ${FFT4G_SRC}
 )
 
 execute_process(
@@ -271,18 +298,18 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp
 ### test app
 ###
 if (BUILD_TEST_APP)
-  add_executable(pitchtest src/testapp.cpp ${FFT4G_SRC}/fft4g.cpp)
+  add_executable(pitchtest src/testapp.cpp ${FFT4G_SRC}/C++/fft4g.cpp)
   set_target_properties(pitchtest PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
-  target_include_directories(pitchtest PRIVATE ${FFT4G_SRC} ${MINIAUDIO_SRC})
+  target_include_directories(pitchtest PRIVATE ${FFT4G_SRC}/C++ ${MINIAUDIO_SRC})
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DANALYZER_DEBUG")
 endif()
 
 ###
 ### imVocalPitchMonitor
 ###
-add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp ${MINIAUDIO_SRC}/extras/stb_vorbis.c src/imgui/backends/${IMVPM_BACKEND}_${IMVPM_GRAPHICS}.cpp ${FFT4G_SRC}/fft4g.cpp ${IMGUI_SRC}/backends/imgui_impl_${IMVPM_GRAPHICS}.cpp ${IMGUI_SRC}/backends/imgui_impl_${IMVPM_BACKEND}.cpp ${IMGUI_SRC}/imgui.cpp ${IMGUI_SRC}/imgui_widgets.cpp ${IMGUI_SRC}/imgui_tables.cpp ${IMGUI_SRC}/imgui_draw.cpp)
+add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp ${MINIAUDIO_SRC}/extras/stb_vorbis.c src/imgui/backends/${IMVPM_BACKEND}_${IMVPM_GRAPHICS}.cpp ${FFT4G_SRC}/C++/fft4g.cpp ${IMGUI_SRC}/backends/imgui_impl_${IMVPM_GRAPHICS}.cpp ${IMGUI_SRC}/backends/imgui_impl_${IMVPM_BACKEND}.cpp ${IMGUI_SRC}/imgui.cpp ${IMGUI_SRC}/imgui_widgets.cpp ${IMGUI_SRC}/imgui_tables.cpp ${IMGUI_SRC}/imgui_draw.cpp)
 set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
-target_include_directories(imvpm PRIVATE src/imgui ${FFT4G_SRC} ${MINIAUDIO_SRC} ${IMGUI_SRC} ${IMGUI_SRC}/backends ${FONTS_SRC} ${PFD_SRC} ${SIMPLEINI_SRC} ${POPL_SRC}/include)
+target_include_directories(imvpm PRIVATE src/imgui ${FFT4G_SRC}/C++ ${MINIAUDIO_SRC} ${IMGUI_SRC} ${IMGUI_SRC}/backends ${FONTS_SRC} ${PFD_SRC} ${SIMPLEINI_SRC} ${POPL_SRC}/include)
 if (OPUS_SUPPORT)
   target_compile_definitions(imvpm PRIVATE HAVE_OPUS)
   if (WIN32)
