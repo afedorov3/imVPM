@@ -81,7 +81,7 @@ Index of this file:
 #include "version.h"
 
 // System includes
-#include <cstdio>           // vsnprintf, sscanf, printf
+#include <cstdio>           // vsnprintf, snprintf, printf
 #include <cmath>            // sin, fmod, fabs
 #include <algorithm>        // min, max
 #include <vector>
@@ -89,7 +89,7 @@ Index of this file:
 #include <inttypes.h>       // PRId64/PRIu64, not avail in some MinGW headers.
 #endif
 #include <sys/stat.h>
-#include <climits>
+#include <limits>
 
 using namespace logger;
 
@@ -316,9 +316,11 @@ static constexpr bool  ButtonScaleDef =   true;  // UI: show scale selector by d
 static constexpr bool  ButtonTempoDef =   true;  // UI: show tempo selector by default [true]
 static constexpr bool  ButtonDevsDef =    true;  // UI: show device selector by default [true]
 static constexpr bool  ClickToHoldDef =   true;  // UI: click on canvas to toggle hold / pause [true]
-static constexpr float CustomScaleMin =   0.5f;  // UI: custom scaling minimum value
+static constexpr float SeekStepMax =     30.0f;  // UI: seek step maximum, seconds
+static constexpr float SeekStepMin =      0.5f;  // UI: seek step minimum, seconds
+static constexpr float SeekStepDef =      5.0f;  // UI: seek step minimum default value, seconds
 static constexpr float CustomScaleMax =   4.0f;  // UI: custom scaling maximum value
-
+static constexpr float CustomScaleMin =   0.5f;  // UI: custom scaling minimum value
 
 // selections
 enum {                                           // settings: note naming scheme
@@ -377,6 +379,7 @@ static bool       but_scale = ButtonScaleDef;
 static bool       but_tempo = ButtonTempoDef;
 static bool     but_devices = ButtonDevsDef;
 static bool      click_hold = ClickToHoldDef;
+static float      seek_step = SeekStepDef;
 static bool  custom_scaling = false;
 static float   custom_scale = 1.0f;
 static float    play_volume = 1.0f;
@@ -688,9 +691,40 @@ void inline Play(const char *file = nullptr)
     audiohandler.play(file);
 }
 
-void inline Seek(uint64_t seek_to)
+void inline Seek(uint64_t seek_to_frame)
 {
-    audiohandler.seek(seek_to);
+    if (!ah_state.canSeek())
+        return;
+
+    audiohandler.seek(seek_to_frame);
+}
+
+void inline Seek(double seek_to_second, bool relative = false)
+{
+    if (!ah_state.canSeek())
+        return;
+
+    uint64_t frame;
+
+    if (!relative)
+    {
+        if (seek_to_second <= 0.0)
+            frame = 0;
+        else if (uint64_t(seek_to_second * audiohandler.sampleRateHz) < ah_len)
+            frame = uint64_t(seek_to_second * audiohandler.sampleRateHz);
+        else
+            frame = ah_len;
+    }
+    else
+    {
+        int64_t relframes = seek_to_second * audiohandler.sampleRateHz;
+        if (relframes >= 0)
+            frame = (relframes < ah_len - ah_pos) ? ah_pos + relframes : ah_len;
+        else
+            frame = (-relframes < ah_pos) ? ah_pos + relframes : 0;
+    }
+
+    audiohandler.seek(frame);
 }
 
 void inline Capture()
@@ -977,6 +1011,7 @@ void LoadSettings()
             GETVAL("imvpm", but_tempo);
             GETVAL("imvpm", but_devices);
             GETVAL("imvpm", click_hold);
+            GETVAL("imvpm", seek_step, SeekStepMin, SeekStepMax);
             GETVAL("imvpm", custom_scaling);
             GETVAL("imvpm", custom_scale, CustomScaleMin, CustomScaleMax);
             GETVAL("imvpm", play_volume, 0.0f, 1.0f);
@@ -992,12 +1027,12 @@ void LoadSettings()
                 for (size_t i = 0; i < plot_colors.size(); i++)
                 {
                     snprintf(key, IM_ARRAYSIZE(key), "plot_colors_%zu", i);
-                    GetIniValue(ini, "imvpm", key, (int&)plot_colors[i], INT_MIN, INT_MAX);
+                    GetIniValue(ini, "imvpm", key, (int&)plot_colors[i], std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
                 }
             }
             {
                 int ival;
-                if (GetIniValue(ini, "imvpm", "wnd_bg_color", ival, INT_MIN, INT_MAX))
+                if (GetIniValue(ini, "imvpm", "wnd_bg_color", ival, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()))
                     ImGui::SysWndBgColor = ImColor((ImU32)ival);
                 const char *pv = ini.GetValue("imvpm", "wnd_pos");
                 if (pv)
@@ -1073,6 +1108,7 @@ void SaveSettings()
     SETBOOL("imvpm", but_tempo);
     SETBOOL("imvpm", but_devices);
     SETBOOL("imvpm", click_hold);
+    SETVAL ("imvpm", seek_step, "%0.1f");
     SETBOOL("imvpm", custom_scaling);
     SETVAL ("imvpm", custom_scale, "%0.1f");
     SETVAL ("imvpm", play_volume, "%0.3f");
@@ -1134,6 +1170,7 @@ void ResetSettings()
     but_tempo = ButtonTempoDef;
     but_devices = ButtonDevsDef;
     click_hold = ClickToHoldDef;
+    seek_step = SeekStepDef;
     if (custom_scaling || custom_scale != 1.0f)
         ImGui::AppReconfigure = true;
     custom_scaling = false;
@@ -2069,20 +2106,45 @@ inline void InputControl()
     // Keyboard
     if (ImGui::IsWindowFocused())
     {
+        // Pause
         if (ImGui::IsKeyPressed(ImGuiKey_Space, false))
             TogglePause();
 
+        // Autoscroll
         if (ImGui::IsKeyPressed(ImGuiKey_A, false))
             autoscroll = !autoscroll;
 
+        // Fullscreen
         if (ImGui::IsKeyPressed(ImGuiKey_F, false))
             ToggleFullscreen();
 
+        // Mute
         if (ImGui::IsKeyPressed(ImGuiKey_M, false))
             ToggleMute();
 
+        // Always on top
         if (ImGui::IsKeyPressed(ImGuiKey_T, false))
             ImGui::SysSetAlwaysOnTop(!ImGui::SysIsAlwaysOnTop());
+
+        // Stop
+        if (ImGui::IsKeyPressed(ImGuiKey_S, false) && (ah_state.isPlaying() || ah_state.isRecording()))
+            Capture();
+
+        // Play
+        if (ImGui::IsKeyPressed(ImGuiKey_P, false) && ah_state.hasPlaybackFile && !ah_state.isRecording())
+            Play();
+
+        // Record
+        if (ImGui::IsKeyPressed(ImGuiKey_R, false) && !ah_state.isPlaying())
+            Record();
+
+        // Rewind
+        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
+            Seek(-seek_step, true);
+
+        // Fast forward
+        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
+            Seek(seek_step, true);
     }
 
     psysfocus = ImGui::SysWndFocus;
@@ -2419,7 +2481,7 @@ void SettingsWindow()
         ImGui::PopStyleColor();
     }
 
-    ImGui::PushItemWidth(-FLT_MIN);
+    ImGui::PushItemWidth(-std::numeric_limits<float>::min());
 
     // Analyzer control
     {
@@ -2530,6 +2592,9 @@ void SettingsWindow()
         ImGui::SameLine(); ImGui::Checkbox("Tempo", &but_tempo);
         ImGui::SameLine(); ImGui::Checkbox("Device selector", &but_devices);
         ImGui::Checkbox("Click2Hold", &click_hold);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Seek step");
+        ImGui::SameLine(); ImGui::SliderFloat("##SeekStep", &seek_step, SeekStepMin, SeekStepMax, "%.1f", ImGuiSliderFlags_AlwaysClamp);
         if (ImGui::Checkbox("Custom scaling", &custom_scaling))
             ImGui::AppReconfigure = true;
         if (!custom_scaling)

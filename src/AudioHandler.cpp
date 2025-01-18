@@ -322,7 +322,7 @@ AudioHandler::AudioHandler(Logger *logptr, uint32_t _sampleRateHz, uint32_t _cha
 {
     if (pc.context) {
         std::unique_lock<std::timed_mutex> lock(pc.mutex);
-        commandThread = std::thread( &AudioHandler::commandProc, this );
+        commandThread = std::thread(&AudioHandler::commandProc, this);
         pc.cond.wait(lock, [this]{ return pc.state.isReady(); });
     }
 }
