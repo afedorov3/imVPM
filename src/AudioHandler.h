@@ -104,7 +104,7 @@ public:
     };
     struct Notification {
         NotificationEvent event;
-        const char* dataStr;
+        const std::string &dataStr;
         uint64_t    dataU64;
     };
 

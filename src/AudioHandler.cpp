@@ -663,7 +663,7 @@ void AudioHandler::commandProc()
 
             if (pc.log) pc.log->LogMsg(LOG_DBG, "Playing file: %s (%s)", pc.lastFileName.c_str(), framesToTime(pc.length).c_str());
             if (pc.notificationCbMask & EventPlayFile)
-                pc.notificationCbProc({EventPlayFile, pc.lastFileName.c_str(), 0}, pc.notificationCbUserData);
+                pc.notificationCbProc({EventPlayFile, pc.lastFileName, 0}, pc.notificationCbUserData);
             break;
         case CmdCapture:
             if (cc.fromuser && !pc.state.canCapture()) {
@@ -705,7 +705,7 @@ void AudioHandler::commandProc()
 
             if (pc.log) pc.log->LogMsg(LOG_DBG, "Recording to file: %s", pc.lastFileName.c_str());
             if (pc.notificationCbMask & EventRecordFile)
-                pc.notificationCbProc({EventRecordFile, pc.lastFileName.c_str(), 0}, pc.notificationCbUserData);
+                pc.notificationCbProc({EventRecordFile, pc.lastFileName, 0}, pc.notificationCbUserData);
             break;
         case CmdRewind:
             cc.argU64 = 0;
@@ -730,7 +730,7 @@ void AudioHandler::commandProc()
 
             if (pc.log) pc.log->LogMsg(LOG_DBG, "%s: seek to %llu", pc.lastFileName.c_str(), cc.argU64);
             if (pc.notificationCbMask & EventSeek)
-                pc.notificationCbProc({EventSeek, pc.lastFileName.c_str(), cc.argU64}, pc.notificationCbUserData);
+                pc.notificationCbProc({EventSeek, pc.lastFileName, cc.argU64}, pc.notificationCbUserData);
             break;
         case CmdPause:
             if (cc.fromuser && !pc.state.canPause()) {
@@ -751,7 +751,7 @@ void AudioHandler::commandProc()
             }
 
             if (pc.notificationCbMask & EventPause)
-                pc.notificationCbProc({EventPause, lastDeviceName->c_str(),
+                pc.notificationCbProc({EventPause, *lastDeviceName,
                     (uint64_t)(pc.device ? (pc.device->type == ma_device_type_playback ? EventOpPlayback : (pc.encoder ? EventOpRecord : EventOpCapture)) : EventOpNone)},
                     pc.notificationCbUserData);
             break;
@@ -852,7 +852,7 @@ void AudioHandler::commandProc()
             pc.state &= ~StatePause;
 
             if (pc.notificationCbMask & EventResume)
-                pc.notificationCbProc({EventResume, lastDeviceName->c_str(),
+                pc.notificationCbProc({EventResume, *lastDeviceName,
                 (uint64_t)(pc.device ? (pc.device->type == ma_device_type_playback ? EventOpPlayback : (pc.encoder ? EventOpRecord : EventOpCapture)) : EventOpNone)},
                 pc.notificationCbUserData);
             break;
@@ -944,7 +944,7 @@ void AudioHandler::commandProc()
             pc.length  = 0;
 
             if (pc.notificationCbMask & EventStop)
-                pc.notificationCbProc({EventStop, lastDeviceName->c_str(), (uint64_t)op}, pc.notificationCbUserData);
+                pc.notificationCbProc({EventStop, *lastDeviceName, (uint64_t)op}, pc.notificationCbUserData);
             break;
         }
         case CmdExit:

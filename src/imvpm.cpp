@@ -1262,15 +1262,18 @@ void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData,
 void eventCb(const AudioHandler::Notification &notification, void *userData)
 {
     std::stringstream title;
+    size_t sep;
 
     switch(notification.event)
     {
         case AudioHandler::EventPlayFile:
-            title << WINDOW_TITLE ": Playing " << notification.dataStr;
+            sep = notification.dataStr.rfind(pfd::path::separator());
+            title << WINDOW_TITLE ": Playing " << (sep == std::string::npos ? notification.dataStr : notification.dataStr.c_str() + sep + 1);
             ImGui::SysSetWindowTitle(title.str().c_str());
             break;
         case AudioHandler::EventRecordFile:
-            title << WINDOW_TITLE ": Recording " << notification.dataStr;
+            sep = notification.dataStr.rfind(pfd::path::separator());
+            title << WINDOW_TITLE ": Recording " << (sep == std::string::npos ? notification.dataStr : notification.dataStr.c_str() + sep + 1);
             ImGui::SysSetWindowTitle(title.str().c_str());
             break;
         case AudioHandler::EventResume:
