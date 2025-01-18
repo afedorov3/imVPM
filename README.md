@@ -81,6 +81,13 @@ Build tools required:
    * kdialog / zenity
    * opusfile
 
+**IMPORTANT**:
+Some dependencies will be patched in the build process, so it's crucial that git doesn't mess with the line endings.  
+It's only relevant to the Windows build, be shure that you have these git settings set up:
+```
+core.autocrlf = false
+core.eol = lf
+```
 to configure run:
 ```
 cmake . -B build -GNinja -DCMAKE_BUILD_TYPE=Release
