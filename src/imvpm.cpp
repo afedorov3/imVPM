@@ -1329,9 +1329,9 @@ int ImGui::AppInit(int argc, char const *const* argv)
     popl::OptionParser op("opts");
     auto capture_option     = op.add<popl::Value<std::string>>("i", "capture", "capture device");
     auto playback_option    = op.add<popl::Value<std::string>>("o", "playback", "playback device");
-    auto record_option      = op.add<popl::Switch>("r", "record", "start recording");
+    auto record_option      = op.add<popl::Switch>("r", "record", "start recording\n(overwrite an existing\nfile without asking)");
     auto verbose_option     = op.add<popl::Switch>("v", "verbose", "enable debug log");
-    // save help text for About window
+    // save the help text for the About window
     {
         std::stringstream ss;
         ss << "imvpm [opts] [file]\n" << op;
@@ -1404,7 +1404,7 @@ bool ImGui::AppConfig()
         0xA640, 0xA69F, // Cyrillic Extended-B
         0x266D, 0x266F, // ♭, ♯
         0x1D2E, 0x1D3E, // Superscript capital
-        0,
+        0
     };
     static const ImWchar ranges_icons_regular[] =
     {
@@ -1432,7 +1432,7 @@ bool ImGui::AppConfig()
     {
         0x0020, 0x007F, // Basic Latin
         0x266D, 0x266F, // ♭, ♯
-        0,
+        0
     };
     io.Fonts->Clear();
 
@@ -1532,8 +1532,8 @@ void ImGui::AppNewFrame()
         select_folder_dlg = nullptr;
     }
 
-    audiohandler.getState(ah_state, &ah_len, &ah_pos); // cache handler state for the frame
     audiohandler.getError();                           // discard any errors
+    audiohandler.getState(ah_state, &ah_len, &ah_pos); // cache handler state for the frame
 
     // if handler is idling try to restart after a grace period for some number of tries
     static double restart_at = 0.0;
@@ -2400,13 +2400,13 @@ void ProcessLog()
 
     static unsigned long long nextN = maxMsgs;
     static double MsgTimeout[maxMsgs] = {};
+    static const ImU32* const msg_colors[LOG_MAXLVL + 1] = { &UI_colors[UIIdxMsgErr], &UI_colors[UIIdxMsgWarn], &UI_colors[UIIdxDefault], &UI_colors[UIIdxMsgDbg] };
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     ImVec2 pos = ImGui::GetWindowSize();
     pos.x /= 2;
     pos.y -= widget_sz.y + widget_margin * 1.5f + font_def_sz;
 
-    ImU32 msg_colors[LOG_MAXLVL + 1] = { UI_colors[UIIdxMsgErr], UI_colors[UIIdxMsgWarn], UI_colors[UIIdxDefault], UI_colors[UIIdxMsgDbg] };
     float alpha = 1.0f;
     size_t timedOut = 0;
     auto& entries = msg_log.LockEntries();
@@ -2428,7 +2428,7 @@ void ProcessLog()
             continue;
         }
 
-        ImU32 color = ImGui::GetColorU32(msg_colors[entry.Lvl],
+        ImU32 color = ImGui::GetColorU32(*msg_colors[entry.Lvl],
                 alpha * std::min(faderate - std::fabs(std::fmod((float)(MsgTimeout[curMsg] - time) * faderate * 2.0f / msgTimeoutSec, faderate * 2.0f) - faderate), 1.0f));
         AddTextAligned(pos, TextAlignCenter, TextAlignMiddle, color, draw_list, entry.Msg.get());
 

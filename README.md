@@ -39,7 +39,7 @@ Keyboard controls:
 |           M|Mute toggle          |
 |           T|Always on top toggle |
 
-Mosue controls:
+Mouse controls:
 |           Control|Function             |
 |-----------------:|:--------------------|
 | Left button click|Pause / HOLD toggle  |
@@ -56,7 +56,7 @@ options:
                           partial, case insensitive (but only for Latin symbols)
                           match is supported
   -o, --playback <device> set preferred playback device
-  -r, --record            start recording
+  -r, --record            start recording [it'll overwrite an existing file without asking]
   -v, --verbose           enable debug log
 ```
 
@@ -74,16 +74,16 @@ Build tools required:
  * Windows build:
    * Windows SDK
    * MSVC libs  
-     if you use MinGW, it bundles both
- * Linux build (development versions):
-   * SDL2
-   * vulkan
+     if you're using MinGW, it bundles both
+ * Linux build:
+   * SDL2 (development, sdl2-dev)
+   * vulkan (+vulkan-headers)
    * kdialog / zenity
    * opusfile
 
 **IMPORTANT**:
-Some dependencies will be patched in the build process, so it's crucial that git doesn't mess with the line endings.  
-It's only relevant to the Windows build, be shure that you have these git settings set up:
+Some dependencies will be patched in the build process, so it's crucial that git doesn't mess up with the line endings.  
+It's only relevant to the Windows build, be sure that you have these git settings set up:
 ```
 core.autocrlf = false
 core.eol = lf

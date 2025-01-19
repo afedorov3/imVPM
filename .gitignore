@@ -1,6 +1,4 @@
-.vscode/launch.json
-.vscode/tasks.json
-*.7z
+.vscode
 archive
 assets/ah
 assets/reverse
