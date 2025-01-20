@@ -18,7 +18,6 @@
 #include "imgui_impl_vulkan.h"
 #include <stdio.h>          // printf, fprintf
 #include <stdlib.h>         // abort
-#include <regex>
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
