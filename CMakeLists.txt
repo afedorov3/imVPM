@@ -31,7 +31,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 find_program(PATCH patch)
-if(${PATCH} STREQUAL "PATCH-NOTFOUND")
+if(PATCH STREQUAL "PATCH-NOTFOUND")
   message(FATAL_ERROR "patch utility not available")
 endif()
 
@@ -40,6 +40,9 @@ option(BUILD_EXAMPLE "" OFF)
 option(BUILD_TESTS "" OFF)
 
 include_directories(src)
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+  add_compile_definitions(_DEBUG)
+endif()
 
 if(NOT WIN32)
   find_package(PkgConfig REQUIRED)
@@ -226,7 +229,7 @@ set(FONTS_SRC ${CMAKE_SOURCE_DIR}/external/fonts)
 ### prepare the sources
 ###
 
-if(${IMVPM_GRAPHICS} STREQUAL "dx11")
+if(IMVPM_GRAPHICS STREQUAL "dx11")
   execute_process(
     COMMAND ${PATCH} -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/imgui/ImGui_ImplDX11_ReCreateFontsTexture.patch
     WORKING_DIRECTORY ${IMGUI_SRC}
@@ -325,20 +328,20 @@ endif()
 ###
 ### GUI dependencies
 ###
-if(${IMVPM_BACKEND} STREQUAL "win32")
+if(IMVPM_BACKEND STREQUAL "win32")
   target_link_libraries(imvpm PRIVATE Dwmapi)
-elseif(${IMVPM_BACKEND} STREQUAL "sdl2")
+elseif(IMVPM_BACKEND STREQUAL "sdl2")
   pkg_search_module(SDL2 REQUIRED sdl2)
   include_directories(${SDL2_INCLUDE_DIRS})
   target_link_libraries(imvpm PRIVATE ${SDL2_LIBRARIES})
 endif()
 
-if(${IMVPM_GRAPHICS} STREQUAL "vulkan")
+if(IMVPM_GRAPHICS STREQUAL "vulkan")
   pkg_search_module(VULKAN REQUIRED vulkan)
   include_directories(${VULKAN_INCLUDE_DIRS})
   target_link_libraries(imvpm PRIVATE ${VULKAN_LIBRARIES})
-elseif(${IMVPM_GRAPHICS} STREQUAL "opengl3")
+elseif(IMVPM_GRAPHICS STREQUAL "opengl3")
   target_link_libraries(imvpm PRIVATE GL)
-elseif(${IMVPM_GRAPHICS} STREQUAL "dx11")
+elseif(IMVPM_GRAPHICS STREQUAL "dx11")
   target_link_libraries(imvpm PRIVATE d3d11 d3dcompiler)
 endif()

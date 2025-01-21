@@ -67,6 +67,10 @@ Index of this file:
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <IconsFontAwesome6.h>
+// bumps FFT resolution (and the detection precision) at the cost of performance
+// see assets/dump/charts.ods[match-compare]
+//#define ANALYZER_BASE_FREQ FREQ_A2
+// pitch history buffer capacity, seconds
 #define ANALYZER_ANALYZE_SPAN 60
 #include "Analyzer.hpp"
 #include "AudioHandler.h"
@@ -534,6 +538,7 @@ typedef enum {
 } WndState;
 static WndState wnd_settings = wsClosed;  // Settings popup state
 static WndState    wnd_about = wsClosed;  // About popup state
+static bool     wnd_spectrum = false;     // show spectrum window
 
 //-----------------------------------------------------------------------------
 // [SECTION] Forward Declarations, Helpers
@@ -557,6 +562,7 @@ static void Draw();                       // main drawing routine
 static void ProcessLog();                 // AudioHandler log messages
 
 // child windows
+static void SpectrumWindow(bool *show);   // spectrum window
 static void SettingsWindow();             // settings window
 
 enum {
@@ -1418,6 +1424,7 @@ bool ImGui::AppConfig()
     };
     static const ImWchar ranges_icons_solid[] =
     {
+        0xE473, 0xE473, // chart-simple
         0xF026, 0xF028, // volume-off, volume-low, volume-high
         0xF065, 0xF066, // expand, compress
         0xF0c9, 0xF0c9, // bars
@@ -1453,6 +1460,7 @@ bool ImGui::AppConfig()
     style.WindowPadding = ImVec2(font_def_sz / 2 * ui_scale, font_def_sz / 2 * ui_scale);
     style.ItemSpacing = ImVec2(font_def_sz / 2 * ui_scale, font_def_sz / 2 * ui_scale);
     style.ItemInnerSpacing = ImVec2(font_def_sz / 4 * ui_scale, font_def_sz / 4 * ui_scale);
+    style.WindowRounding = 5.0f * ui_scale;
     style.FrameRounding = 5.0f * ui_scale;
     style.PopupRounding = 5.0f * ui_scale;
     style.GrabRounding  = 4.0f * ui_scale;
@@ -1661,6 +1669,9 @@ void ImGui::AppNewFrame()
     SettingsWindow();
     ImGui::ShowAboutWindow(nullptr);
 
+    if (wnd_spectrum)
+        SpectrumWindow(&wnd_spectrum);
+
     //ImGui::ShowIDStackToolWindow(nullptr);
 }
 
@@ -1682,15 +1693,17 @@ void Menu()
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(menu_spacing, menu_spacing));
     if (ImGui::BeginPopup("##MenuPopup"))
     {
-        if (ImGui::Selectable(ICON_FA_FOLDER_OPEN " Open file"))
+        if (ImGui::MenuItem(ICON_FA_FOLDER_OPEN " Open file", ""))
             OpenAudioFile();
         ImGui::Separator();
-        if (ImGui::Selectable(ICON_FA_SLIDERS " Settings"))
+        if (ImGui::MenuItem(ICON_FA_CHART_SIMPLE " Spectrum", "", wnd_spectrum))
+            wnd_spectrum = !wnd_spectrum;
+        if (ImGui::MenuItem(ICON_FA_SLIDERS " Settings", ""))
             ShowWindow(wnd_settings);
-        if (ImGui::Selectable(ICON_FA_INFO " About"))
+        if (ImGui::MenuItem(ICON_FA_INFO " About", ""))
             ShowWindow(wnd_about);
         ImGui::Separator();
-        if (ImGui::Selectable(ICON_FA_DOOR_OPEN " Exit"))
+        if (ImGui::MenuItem(ICON_FA_DOOR_OPEN " Exit", ""))
             ImGui::AppExit = true;
 
         ImGui::EndPopup();
@@ -2101,7 +2114,7 @@ inline void InputControl()
             TogglePause();
     }
     // handle nc activity
-    if (ImGui::SysWndFocus != psysfocus || (!hover && ImGui::IsMouseClicked(ImGuiMouseButton_Left)))
+    if (ImGui::SysWndFocus != psysfocus || (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && (!hover || !ImGui::IsWindowFocused())))
         mlblock = true;
     else if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
         mlblock = false;
@@ -2437,6 +2450,88 @@ void ProcessLog()
     }
     msg_log.UnlockEntries();
     nextN += timedOut;
+}
+
+// from src/plug.c:fft_analyze() @ https://github.com/tsoding/musializer
+void SpectrumWindow(bool *show)
+{
+    static const double fft_quant = Analyzer::SAMPLE_FREQ / Analyzer::FFTSIZE;
+    static const double step = std::pow(2.0, 1.0/12.0);
+    static const double fbot = floor(Analyzer::Analyzer::FREQ_C2 / step) * step;
+    static const double ftop = std::min(Analyzer::SAMPLE_FREQ / 2, ceil(Analyzer::FREQ_C7 / step) * step);
+    static const size_t keycnt = (size_t)((std::log2(ftop) - std::log2(fbot)) * 12.0 + 1);
+    static std::unique_ptr<float[]> out_log(new float[keycnt]());
+    static std::unique_ptr<float[]> out_smooth(new float[keycnt]());
+    static size_t p_total_cnt = 0;
+    static double f_peak = -1.0;
+
+    ImVec2 wsize = ImVec2(std::ceil(8.0f * ui_scale) * keycnt + ImGui::GetStyle().WindowPadding.x * 2, 200.0f * ui_scale);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(wsize.x, wsize.y), ImVec2(std::numeric_limits<float>::max(), std::numeric_limits<float>::max()));
+    ImGui::SetNextWindowSize(wsize, ImGuiCond_Appearing);
+    ImGui::SetNextWindowPos(
+        ImVec2(rullbl_sz.x * !rul_right + widget_margin, (top_feat_pos + 11.0f /* tuner offset + tuner long tick */ + font_tuner_sz) * ui_scale + widget_margin),
+        ImGuiCond_Appearing);
+    if (!ImGui::Begin("Spectrum C2..C7", show, ImGuiWindowFlags_NoFocusOnAppearing))
+    {
+        ImGui::End();
+        return;
+    }
+
+    // "Squash" into keys
+    float max_amp = 1.0f;
+    {
+        std::lock_guard<std::mutex> lock(analyzer_mtx);
+        size_t total_cnt = analyzer.get_total_analyze_cnt();
+        if (total_cnt != p_total_cnt)
+        {
+            f_peak = analyzer.get_peak_freq();
+            auto fft_buf = analyzer.get_fft_buf();
+            size_t cnt = 0;
+            for (double f = fbot; f <= ftop; f *= step) {
+                size_t q = (size_t)round(f / fft_quant), qtop = (size_t)round(f * step / fft_quant);
+                float a = 0.0f;
+                do {
+                    float b = (float)std::log(Analyzer::power(fft_buf[q * 2], fft_buf[q * 2 + 1]));
+                    if (b > a) a = b;
+                } while (++q < qtop);
+                if (max_amp < a) max_amp = a;
+                IM_ASSERT(cnt < keycnt);
+                out_log[cnt++] = a;
+            }
+
+            p_total_cnt = total_cnt;
+        }
+    }
+
+    // Normalize Frequencies to 0..1 range
+    if (max_amp > 1.0f)
+    {
+        for (size_t i = 0; i < keycnt; ++i)
+            out_log[i] /= max_amp;
+    }
+
+    // Smooth out and plot the values
+    auto *draw_list = ImGui::GetWindowDrawList();
+    ImVec2 rmin = ImGui::GetWindowPos() + ImGui::GetCursorPos();
+    ImVec2 rmax = rmin + ImGui::GetContentRegionAvail();
+    float adv = floor((rmax.x - rmin.x) / keycnt);
+    rmax.x = rmin.x + adv * keycnt; // adjust for rounded cell size
+    float margin = 2.0f * ui_scale;
+    float width = adv - margin;
+    float height = rmax.y - rmin.y;
+    int n_peak = f_peak >= 0.0 ? (int)std::round((std::log2(f_peak) - std::log2(fbot)) * 12.0) : -1;
+    rmax.x = rmin.x + width;
+    double dt = 1.0f / ImGui::GetIO().Framerate;
+    constexpr float smoothness = 10;
+    for (size_t i = 0; i < keycnt; ++i) {
+        out_smooth[i] += (out_log[i] - out_smooth[i]) * smoothness * dt;
+        rmin.y = rmax.y - std::max(margin, out_smooth[i] * height);
+        draw_list->AddRectFilled(rmin, rmax, i == n_peak ? plot_colors[PlotIdxPitch] : UI_colors[UIIdxDefault]);
+        rmin.x += adv;
+        rmax.x += adv;
+    }
+
+    ImGui::End();
 }
 
 void SettingsWindow()

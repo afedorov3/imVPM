@@ -26,6 +26,7 @@
 #define ANALYZER_BASE_FREQ FREQ_A3
 #endif // ANALYZER_BASE_FREQ
 
+// use parabolic interpolation instead of original averaging code
 //#define ANALYZER_INTERPOLATION
 
 class Analyzer {
@@ -41,8 +42,7 @@ public:
     static constexpr double FREQ_A3 = 220.0;
     static constexpr double FREQ_A2 = 110.0;
     static constexpr double FREQ_A1 = 55.0;
-    static const     double FREQ_C1;
-    static const     double FREQ_C8;
+    static const     double FREQ_C1, FREQ_C2, FREQ_C3, FREQ_C4, FREQ_C5, FREQ_C6, FREQ_C7, FREQ_C8;
     static const     double LOG2_FREQ_C1;
 
     static const     double SAMPLE_FREQ;
@@ -91,6 +91,10 @@ public:
 
     std::shared_ptr<const float[]> get_pitch_buf() {
         return pitch_buf;
+    }
+
+    std::shared_ptr<const double[]> get_fft_buf() {
+        return fft_data;
     }
 
     size_t get_pitch_buf_pos() {
@@ -148,7 +152,7 @@ private:
     std::unique_ptr<double[]> han_window;
     std::unique_ptr<double[]> acf_data;
     fft4g fft;
-    std::unique_ptr<double[]> fft_data;
+    std::shared_ptr<double[]> fft_data;
     std::shared_ptr<float[]> pitch_buf;
     size_t pitch_buf_pos;
     std::unique_ptr<sample_t[]> wave_data;
@@ -363,8 +367,14 @@ public:
 #endif // ANALYZER_DEBUG
 };
 
-const double Analyzer::FREQ_C1 = std::pow(2.0, (-9.0/12.0)) * FREQ_A1;
 const double Analyzer::FREQ_C8 = std::pow(2.0, (-9.0/12.0)) * FREQ_A8;
+const double Analyzer::FREQ_C7 = std::pow(2.0, (-9.0/12.0)) * FREQ_A7;
+const double Analyzer::FREQ_C6 = std::pow(2.0, (-9.0/12.0)) * FREQ_A6;
+const double Analyzer::FREQ_C5 = std::pow(2.0, (-9.0/12.0)) * FREQ_A5;
+const double Analyzer::FREQ_C4 = std::pow(2.0, (-9.0/12.0)) * FREQ_A4;
+const double Analyzer::FREQ_C3 = std::pow(2.0, (-9.0/12.0)) * FREQ_A3;
+const double Analyzer::FREQ_C2 = std::pow(2.0, (-9.0/12.0)) * FREQ_A2;
+const double Analyzer::FREQ_C1 = std::pow(2.0, (-9.0/12.0)) * FREQ_A1;
 const double Analyzer::LOG2_FREQ_C1 = std::log2(FREQ_C1);
 
 const double Analyzer::SAMPLE_FREQ = ANALYZER_SAMPLE_FREQ;

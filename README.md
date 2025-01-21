@@ -76,10 +76,10 @@ Build tools required:
    * MSVC libs  
      if you're using MinGW, it bundles both
  * Linux build:
-   * SDL2 (development, sdl2-dev)
-   * vulkan (+vulkan-headers)
+   * SDL2 (libsdl2-dev)
+   * vulkan (libvulkan-dev)
    * kdialog / zenity
-   * opusfile
+   * opusfile (libopusfile-dev)
 
 **IMPORTANT**:
 Some dependencies will be patched in the build process, so it's crucial that git doesn't mess up with the line endings.  
