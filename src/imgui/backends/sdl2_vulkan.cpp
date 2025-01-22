@@ -453,7 +453,7 @@ int main(int argc, char* argv[])
     //IM_ASSERT(font != nullptr);
 
     // Initial config
-    ImGui::AppConfig();
+    ImGui::AppConfig(true);
 
     ImRect pMinMax = {};
     // Main loop
@@ -541,7 +541,7 @@ int main(int argc, char* argv[])
         // Signal to App on config change
         if (ImGui::AppReconfigure)
         {
-            if (ImGui::AppConfig())
+            if (ImGui::AppConfig(false))
                 ImGui_ImplVulkan_CreateFontsTexture();
             ImGui::AppReconfigure = false;
         }

@@ -30,9 +30,9 @@ namespace ImGui
 
     // App functions
     int  AppInit(int argc, char const *const* argv); // called once at the start of main() function
-    bool AppConfig();                                // called before NewFrame at startup and after system settings has changed
+    bool AppConfig(bool startup);                    // called before NewFrame at startup and after system settings has changed
                                                      // if true is returned, fonts texture will be updated
-                                                     // do not call directrly from app, set AppReconfigure flag instead
+                                                     // do not call directly from the app, set AppReconfigure flag instead
     void AppNewFrame();                              // called After NewFrame at every frame
     void AppDestroy();                               // called once just after the main loop
 

@@ -1408,10 +1408,8 @@ int ImGui::AppInit(int argc, char const *const* argv)
   font_config.MergeMode = false; \
   font_config.GlyphMinAdvanceX = 0; \
 } while(0)
-bool ImGui::AppConfig()
+bool ImGui::AppConfig(bool startup)
 {
-    ImGui::SysSetWindowTitle(WINDOW_TITLE);
-
     if (custom_scaling)
         ui_scale = custom_scale;
     else
@@ -1465,8 +1463,8 @@ bool ImGui::AppConfig()
         0x266D, 0x266F, // ♭, ♯
         0
     };
-    io.Fonts->Clear();
 
+    io.Fonts->Clear();
     ADD_FONT(font_def, ranges_ui, FONT);
     MERGE_FONT(font_icon, ranges_icons_regular, FONT_ICONS_REGULAR);
     MERGE_FONT(font_icon, ranges_icons_solid, FONT_ICONS_SOLID);
@@ -1475,7 +1473,6 @@ bool ImGui::AppConfig()
     ADD_FONT(font_tuner, ranges_notes, FONT_NOTES);
     ADD_FONT(font_pitch, ranges_notes, FONT_NOTES);
     ADD_FONT(font_grid, ranges_notes, FONT_NOTES);
-
     io.Fonts->Build();
     io.FontDefault = font_def;
     fonts_reloaded = true;
@@ -1501,7 +1498,11 @@ bool ImGui::AppConfig()
     ImGui::SysWndMinMax.x = (widget_sz.x + widget_margin) * 10;
     ImGui::SysWndMinMax.y = (widget_sz.x + widget_margin) * 10;
 
-    ImGui::SysAcceptFiles(DragAndDropCb);
+    if (startup)
+    {
+        ImGui::SysSetWindowTitle(WINDOW_TITLE);
+        ImGui::SysAcceptFiles(DragAndDropCb);
+    }
 
     return true;
 }

@@ -162,7 +162,7 @@ int wmain(int argc, wchar_t** wargv)
     //IM_ASSERT(font != nullptr);
 
     // Initial config
-    ImGui::AppConfig();
+    ImGui::AppConfig(true);
 
     // Main loop
     while (!ImGui::AppExit)
@@ -200,7 +200,7 @@ int wmain(int argc, wchar_t** wargv)
         // Signal to App on config change
         if (ImGui::AppReconfigure)
         {
-            if (ImGui::AppConfig())
+            if (ImGui::AppConfig(false))
                 ImGui_ImplDX11_ReCreateFontsTexture();
             ImGui::AppReconfigure = false;
         }
