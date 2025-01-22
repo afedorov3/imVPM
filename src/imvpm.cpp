@@ -67,8 +67,8 @@ Index of this file:
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <IconsFontAwesome6.h>
-// bumps FFT resolution (and the detection precision) at the cost of performance
-// see assets/dump/charts.ods[match-compare]
+// bumps FFT resolution (and the detection precision) at the cost of performance drop
+// see assets/dump/charts.ods:match-compare for comparison results
 //#define ANALYZER_BASE_FREQ FREQ_A2
 // pitch history buffer capacity, seconds
 #define ANALYZER_ANALYZE_SPAN 60
@@ -528,6 +528,7 @@ static Logger msg_log;
 static AudioHandler audiohandler(&msg_log, 44100 /* Fsample */, 2 /* channels */, AudioHandler::FormatF32 /* sample format */, AudioHandler::FormatS16 /* record format */, 1470 /* cb interval */);
 static AudioHandler::State ah_state;      // frame-locked handler state
 static uint64_t ah_len = 0, ah_pos = 0;   // handler length and position, applicable only to playback and record
+static size_t hold_cnt = 0;               // frames missed due to hold
 
 // window handling
 typedef enum {
@@ -583,7 +584,7 @@ static void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpi
 //-----------------------------------------------------------------------------
 
 #if defined(_WIN32)
-pathstr_t GetConfigPath()
+static pathstr_t GetConfigPath()
 {
     // try local file first
     wchar_t buf[MAX_PATH] = { 0 };
@@ -614,7 +615,7 @@ pathstr_t GetConfigPath()
     return pfd::internal::str2wstr(path);
 }
 #else
-pathstr_t GetConfigPath()
+static pathstr_t GetConfigPath()
 {
     char buf[PATH_MAX];
     ssize_t count = readlink("/proc/self/exe", buf, IM_ARRAYSIZE(buf));
@@ -641,13 +642,13 @@ pathstr_t GetConfigPath()
 #endif
 
 // by Joseph @ https://stackoverflow.com/questions/874134/find-out-if-string-ends-with-another-string-in-c
-inline bool ends_with(std::string const & value, std::string const & ending)
+static inline bool ends_with(std::string const & value, std::string const & ending)
 {
     if (ending.size() > value.size()) return false;
     return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
 
-void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpidx, int octave, ImU32 color, ImDrawList* draw_list)
+static void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpidx, int octave, ImU32 color, ImDrawList* draw_list)
 {
     static char label[16];
 
@@ -661,7 +662,7 @@ void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpidx, int
     draw_list->AddText(at, color, label);
 }
 
-void AddTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawList* draw_list, const char *str)
+static void AddTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawList* draw_list, const char *str)
 {
     ImVec2 size = ImGui::CalcTextSize(str);
     at.x += size.x / 2.0f * alignH;
@@ -669,7 +670,7 @@ void AddTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawList* 
     draw_list->AddText(at, color, str);    
 }
 
-void AddFmtTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawList* draw_list, const char *fmt, ...)
+static void AddFmtTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawList* draw_list, const char *fmt, ...)
 {
     static char str[256];
     va_list args;
@@ -686,8 +687,16 @@ void AddFmtTextAligned(ImVec2 at, int alignH, int alignV, ImU32 color, ImDrawLis
     draw_list->AddText(at, color, str);
 }
 
+static void AlignTempo(size_t position = 0)
+{
+    std::lock_guard<std::mutex> lock(analyzer_mtx);
+    analyzer.set_total_analyze_cnt(Analyzer::PITCH_BUF_SIZE + position); // offset for panning
+    analyzer.clearData();
+    hold_cnt = 0;
+}
+
 // audio control wrappers
-void inline Play(const char *file = nullptr)
+static void Play(const char *file = nullptr)
 {
     if (file && *file)
         last_file = file;
@@ -697,7 +706,7 @@ void inline Play(const char *file = nullptr)
     audiohandler.play(file);
 }
 
-void inline Seek(uint64_t seek_to_frame)
+static void Seek(uint64_t seek_to_frame)
 {
     if (!ah_state.canSeek())
         return;
@@ -705,7 +714,7 @@ void inline Seek(uint64_t seek_to_frame)
     audiohandler.seek(seek_to_frame);
 }
 
-void inline Seek(double seek_to_second, bool relative = false)
+static void Seek(double seek_to_second, bool relative = false)
 {
     if (!ah_state.canSeek())
         return;
@@ -733,7 +742,7 @@ void inline Seek(double seek_to_second, bool relative = false)
     audiohandler.seek(frame);
 }
 
-void inline Capture()
+static void Capture()
 {
     if (!ah_state.isCapturing())
     {
@@ -742,7 +751,7 @@ void inline Capture()
     }
 }
 
-void inline Record(const char *file = nullptr)
+static void Record(const char *file = nullptr)
 {
     if (!file && ah_state.isRecording())
     {
@@ -783,27 +792,27 @@ void inline Record(const char *file = nullptr)
     audiohandler.record(last_file.c_str());
 }
 
-void inline Pause()
+static void Pause()
 {
     if (ah_state.canPause())
         audiohandler.pause();
 }
 
-void inline Resume()
+static void Resume()
 {
     hold = false;
     if (ah_state.canResume())
         audiohandler.resume();
 }
 
-void inline ToggleHold()
+static void ToggleHold()
 {
     hold = !hold;
     if (!hold)
         x_off_reset = true;
 }
 
-void inline TogglePause()
+static void TogglePause()
 {
     if (!ah_state.isPlaying())
         return ToggleHold();
@@ -818,18 +827,18 @@ void inline TogglePause()
     }
 }
 
-void inline AdjustVolume()
+static inline void AdjustVolume()
 {
     audiohandler.setPlaybackVolumeFactor(mute ? 0 : play_volume);
 }
 
-void inline ToggleMute()
+static inline void ToggleMute()
 {
     mute = !mute;
     AdjustVolume();
 }
 
-void inline ToggleFullscreen()
+static inline void ToggleFullscreen()
 {
     if (ImGui::SysWndState == ImGui::WSMaximized)
         ImGui::SysRestore();
@@ -837,7 +846,7 @@ void inline ToggleFullscreen()
         ImGui::SysMaximize();
 }
 
-void OpenAudioFile()
+static void OpenAudioFile()
 {
     open_file_dlg = unique_open_file(new pfd::open_file("Open file for playback", !open_dir.empty() ? open_dir : pfd::path::home(),
                             { "Audio files (.wav .mp3 .ogg .flac"
@@ -851,17 +860,17 @@ void OpenAudioFile()
                             , "All Files", "*" }));
 }
 
-void BrowseDirectory()
+static inline void BrowseDirectory()
 {
     select_folder_dlg = unique_select_folder(new pfd::select_folder("Select record directory", record_dir[0] ? record_dir : pfd::path::home()));
 }
 
-inline void UpdateCalibration()
+static inline void UpdateCalibration()
 {
     c_calib = (float)((std::log2(440.0) - std::log2((double)calibration)) * 12.0 * 100.0) + (float)(transpose * 100);
 }
 
-void UpdateScale()
+static void UpdateScale()
 {
     if (scale_str.compare(0, std::string::npos, "Chromatic") == 0)
     {
@@ -891,14 +900,14 @@ void UpdateScale()
     scale_chroma = false;
 }
 
-void UpdatePeakBuf(int size)
+static void UpdatePeakBuf(int size)
 {
     f_peak_buf.clear();
     f_peak_buf.resize(size, -1.0);
     f_peak_buf_pos = 0;
 }
 
-bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, int &value, int min, int max)
+static bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, int &value, int min, int max)
 {
     const char *pv = ini.GetValue(section, key);
     if (pv == nullptr)
@@ -914,7 +923,7 @@ bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, i
     return true;
 }
 
-bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, float &value, float min, float max)
+static bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, float &value, float min, float max)
 {
     const char *pv = ini.GetValue(section, key);
     if (pv == nullptr)
@@ -930,7 +939,7 @@ bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, f
     return true;
 }
 
-bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, bool &value)
+static bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, bool &value)
 {
     constexpr const char *values[] = { "false", "true", "off", "on", "no", "yes", "0", "1" };
 
@@ -945,7 +954,7 @@ bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, b
     return false;
 }
 
-bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, char *value, size_t value_sz)
+static bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, char *value, size_t value_sz)
 {
     const char *pv = ini.GetValue(section, key);
     if (pv == nullptr)
@@ -961,7 +970,7 @@ bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, c
     return true;
 }
 
-bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, std::string &value,  const char **values, size_t el_count)
+static bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, std::string &value,  const char **values, size_t el_count)
 {
     const char *pv = ini.GetValue(section, key);
     if (pv == nullptr)
@@ -976,7 +985,7 @@ bool GetIniValue(const CSimpleIniA &ini, const char *section, const char *key, s
 
 #define VA_ARGS(...) , ##__VA_ARGS__
 #define GETVAL(sec, var, ...) GetIniValue(ini, sec, #var, var VA_ARGS(__VA_ARGS__))
-void LoadSettings()
+static void LoadSettings()
 {
     config_file = GetConfigPath();
 
@@ -1081,7 +1090,7 @@ void LoadSettings()
 
 #define  SETVAL(sec, var, format) do { snprintf(sval, IM_ARRAYSIZE(sval), format, var); ini.SetValue(sec, #var, sval); } while(0)
 #define SETBOOL(sec, var) do { ini.SetValue(sec, #var, (var) ? "true" : "false"); } while(0)
-void SaveSettings()
+static void SaveSettings()
 {
     if (config_file.empty() || ro_config)
         return;
@@ -1151,7 +1160,7 @@ void SaveSettings()
     ini.SaveFile(config_file.c_str());
 }
 
-void ResetSettings()
+static void ResetSettings()
 {
     vol_thres = VolThresDef;
     x_zoom = PlotXZoomDef;
@@ -1194,7 +1203,7 @@ void ResetSettings()
     AdjustVolume();
 }
 
-bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault], bool disabled = false)
+static bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault], bool disabled = false)
 {
     bool ret;
 
@@ -1214,7 +1223,7 @@ bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault], bool 
     return ret;
 }
 
-bool HandlePopupState(const char *id, WndState &state, const ImVec2 &pos, const ImVec2 &pivot, ImGuiWindowFlags flags = 0)
+static bool HandlePopupState(const char *id, WndState &state, const ImVec2 &pos, const ImVec2 &pivot, ImGuiWindowFlags flags = 0)
 {
     if (state == wsOpen)
         ImGui::OpenPopup(id);
@@ -1235,7 +1244,7 @@ bool HandlePopupState(const char *id, WndState &state, const ImVec2 &pos, const 
     return true;
 }
 
-inline bool ShowWindow(WndState &state)
+static inline bool ShowWindow(WndState &state)
 {
     if (state != wsClosed)
         return false;
@@ -1251,14 +1260,13 @@ inline bool ShowWindow(WndState &state)
 // AudioHandler
 void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData, uint32_t frameCount, void *userData)
 {
-    static size_t hold_cnt = 0;
+    std::lock_guard<std::mutex> lock(analyzer_mtx);
     if (hold)
     {
         hold_cnt++;
         return;
     }
 
-    std::lock_guard<std::mutex> lock(analyzer_mtx);
     const float *bufptr = (const float*)pData;
     const uint64_t sampleCount = (uint64_t)frameCount * channels;
     if (hold_cnt)
@@ -1286,11 +1294,7 @@ void eventCb(const AudioHandler::Notification &notification, void *userData)
             sep = notification.dataStr.rfind(pfd::path::separator());
             title << WINDOW_TITLE ": Playing " << (sep == std::string::npos ? notification.dataStr : notification.dataStr.c_str() + sep + 1);
             ImGui::SysSetWindowTitle(title.str().c_str());
-            {
-                std::lock_guard<std::mutex> lock(analyzer_mtx);
-                analyzer.clearData();
-                analyzer.set_total_analyze_cnt(Analyzer::PITCH_BUF_SIZE); // reset tempo pos
-            }
+            AlignTempo();
             break;
         case AudioHandler::EventRecordFile:
             sep = notification.dataStr.rfind(pfd::path::separator());
@@ -1298,10 +1302,7 @@ void eventCb(const AudioHandler::Notification &notification, void *userData)
             ImGui::SysSetWindowTitle(title.str().c_str());
             break;
         case AudioHandler::EventSeek:
-            {
-                std::lock_guard<std::mutex> lock(analyzer_mtx);
-                analyzer.set_total_analyze_cnt(Analyzer::PITCH_BUF_SIZE + notification.dataU64 / Analyzer::ANALYZE_INTERVAL); // adjust tempo pos
-            }
+            AlignTempo(notification.dataU64 / Analyzer::ANALYZE_INTERVAL);
             break;
         case AudioHandler::EventResume:
             if (notification.dataU64 != AudioHandler::EventOpCapture)
@@ -1337,7 +1338,7 @@ int ImGui::AppInit(int argc, char const *const* argv)
 
     LoadSettings();
 
-    analyzer.set_total_analyze_cnt(Analyzer::PITCH_BUF_SIZE); // initial offset for panning
+    AlignTempo();
     audiohandler.attachFrameDataCb(sampleCb, nullptr);
     audiohandler.attachNotificationCb(AudioHandler::EventPlayFile
                                     | AudioHandler::EventRecordFile
@@ -1708,7 +1709,7 @@ void ImGui::AppDestroy()
 // [SECTION] Child windows
 //-----------------------------------------------------------------------------
 
-void Menu()
+static void Menu()
 {
     if (ButtonWidget(ICON_FA_BARS))
         ImGui::OpenPopup("##MenuPopup");
@@ -1735,7 +1736,7 @@ void Menu()
     ImGui::PopStyleVar(2);
 }
 
-void CaptureDevices()
+static void CaptureDevices()
 {
     if (ButtonWidget(ICON_FA_MICROPHONE, ah_state.isCapOrRec() ? UI_colors[UIIdxCapture] : UI_colors[UIIdxDefault]))
     {
@@ -1768,7 +1769,7 @@ void CaptureDevices()
     ImGui::PopStyleVar(2);
 }
 
-void PlaybackDevices()
+static void PlaybackDevices()
 {
     if (ButtonWidget(mute ? ICON_FA_VOLUME_XMARK : ICON_FA_VOLUME_OFF))
     {
@@ -1811,7 +1812,7 @@ void PlaybackDevices()
     ImGui::PopStyleVar(2);
 }
 
-void AudioControl()
+static void AudioControl()
 {
     // align cursor to pixel boundary for record dot to align properly
     ImVec2 pos = ImGui::GetCursorPos();
@@ -1874,7 +1875,7 @@ void AudioControl()
     }
 }
 
-void TempoSettings()
+static void TempoSettings()
 {
     ImGui::Checkbox("Tempo grid", &tempo_grid);
     ImGui::SameLine(); ImGui::Checkbox("Metronome", &metronome);
@@ -1898,7 +1899,7 @@ void TempoSettings()
     ImGui::EndGroup();
 }
 
-void TempoControl()
+static void TempoControl()
 {
     static char label[] = "120\n ᴮᴾᴹ##TempoControl";
 
@@ -1925,7 +1926,7 @@ void TempoControl()
     }
 }
 
-void ScaleSelector(bool from_settings)
+static void ScaleSelector(bool from_settings)
 {
     ImGuiComboFlags flags = ImGuiComboFlags_None;
     if (!from_settings)
@@ -1964,7 +1965,7 @@ void ScaleSelector(bool from_settings)
     }
 }
 
-void HoldButton()
+static void HoldButton()
 {
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxDefault], 1.0f - 0.5f * !hold));
     ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
@@ -1975,7 +1976,7 @@ void HoldButton()
     ImGui::PopStyleColor(4);
 }
 
-void PlaybackProgress()
+static void PlaybackProgress()
 {
     progress_hgt = widget_margin * (0.4f + progress_hover * 0.5f);
     ImVec2 size = ImGui::GetWindowSize();
@@ -2012,7 +2013,7 @@ void PlaybackProgress()
     }
 }
 
-bool ColorPicker(const char *label, ImU32 &color, float split)
+static bool ColorPicker(const char *label, ImU32 &color, float split)
 {
     float button_width(100.0f * ui_scale);
     static ImColor backup_color;
@@ -2081,7 +2082,7 @@ bool ColorPicker(const char *label, ImU32 &color, float split)
     return ret;
 }
 
-inline void InputControl()
+static void InputControl()
 {
     static bool mlblock = false;
     static bool psysfocus = true;
@@ -2193,7 +2194,7 @@ inline void InputControl()
     psysfocus = ImGui::SysWndFocus;
 }
 
-void Draw()
+static void Draw()
 {
     double f_peak;
     size_t total_analyze_cnt, pitch_buf_pos;
@@ -2286,9 +2287,9 @@ void Draw()
     if (x_offset < 0)
         x_offset = 0.0f;
     else
-        x_offset = std::min((float)(Analyzer::PITCH_BUF_SIZE - 1 - int(x_span / x_zoom)), x_offset);
+        x_offset = std::min((float)(Analyzer::PITCH_BUF_SIZE - 2 - int(x_span / x_zoom)), x_offset);
     // adjust horizontal zoom
-    x_zoom_min = std::max(PlotXZoomMin, x_span / (float)(Analyzer::PITCH_BUF_SIZE - 1)); // limit zoom by pitch buffer size; ignore current pitch buffer element
+    x_zoom_min = std::max(PlotXZoomMin, x_span / (float)(Analyzer::PITCH_BUF_SIZE - 2)); // limit zoom by pitch buffer size; ignore current pitch buffer element
     if (x_zoom < x_zoom_min)
         x_zoom = x_zoom_min;
     float x_zoom_scaled = x_zoom * ui_scale;
@@ -2297,19 +2298,20 @@ void Draw()
     if (tempo_grid || metronome)
     {
         const float intervals_per_bpm = 60.0f/* sec */ / (float)tempo_val / Analyzer::get_interval_sec();
+        const size_t total_count_adjusted = total_analyze_cnt + Analyzer::PITCH_BUF_SIZE - 1; // ignore current pitch buffer element
 
         if (metronome)
         {
             float trig_dist = 7.0f - (float)tempo_val / 60.0f;
-            float trig = (std::fmod(std::fmod((double)total_analyze_cnt, intervals_per_bpm) + trig_dist, intervals_per_bpm) - trig_dist) / trig_dist;
+            float trig = (std::fmod(std::fmod((double)total_count_adjusted, intervals_per_bpm) + trig_dist, intervals_per_bpm) - trig_dist) / trig_dist;
             if (trig <= 1.0f)
                 draw_list->AddRect(ImVec2(0.0f, 0.0f), ImVec2(wsize.x, wsize.y), plot_colors[PlotIdxMetronome], 0.0f, ImDrawFlags_None, (1.0f - std::fabs(trig)) * 20.0f * ui_scale);
         }
 
         if (tempo_grid)
         {
-            size_t beat_cnt = ((double)total_analyze_cnt - (int)x_offset) / intervals_per_bpm;
-            float offset = x_right - std::fmod((double)(total_analyze_cnt - (int)x_offset), intervals_per_bpm) * x_zoom_scaled;
+            size_t beat_cnt = ((double)total_count_adjusted - (int)x_offset) / intervals_per_bpm;
+            float offset = x_right - std::fmod((double)(total_count_adjusted - (int)x_offset), intervals_per_bpm) * x_zoom_scaled;
             while(offset > x_left)
             {
                 draw_list->AddLine(ImVec2(offset, 0.0f), ImVec2(offset, wsize.y), plot_colors[PlotIdxTempo],
@@ -2355,8 +2357,8 @@ void Draw()
         ImVec2 pv;
 
         auto pitch_buf = analyzer.get_pitch_buf();
-        size_t pitch_buf_offset = pitch_buf_pos + Analyzer::PITCH_BUF_SIZE - (int)x_offset;
-        for(int i = 1; i <= max_cnt; ++i) // ignore current position
+        size_t pitch_buf_offset = pitch_buf_pos + Analyzer::PITCH_BUF_SIZE - 1 - (int)x_offset; // ignore current pitch buffer element
+        for(int i = 0; i <= max_cnt; ++i) // inclusive
         {
             float p = pitch_buf[(pitch_buf_offset - i) % Analyzer::PITCH_BUF_SIZE];
             if (p >= 0.0f)
@@ -2451,7 +2453,7 @@ void Draw()
     }
 }
 
-void ProcessLog()
+static void ProcessLog()
 {
     constexpr size_t maxMsgs = 3;
     constexpr float msgTimeoutSec = 5.0f;
@@ -2500,7 +2502,7 @@ void ProcessLog()
 }
 
 // from src/plug.c:fft_analyze() @ https://github.com/tsoding/musializer
-void SpectrumWindow(bool *show)
+static void SpectrumWindow(bool *show)
 {
     static const double fft_quant = Analyzer::SAMPLE_FREQ / Analyzer::FFTSIZE;
     static const double step = std::pow(2.0, 1.0/12.0);
@@ -2584,7 +2586,7 @@ void SpectrumWindow(bool *show)
     ImGui::End();
 }
 
-void SettingsWindow()
+static void SettingsWindow()
 {
     ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImGui::GetMainViewport()->Size * 0.8f);
     if (!HandlePopupState("Settings", wnd_settings, ImGui::GetMainViewport()->GetCenter(), ImVec2(0.5f, 0.5f), ImGuiWindowFlags_AlwaysAutoResize))
@@ -2741,7 +2743,7 @@ void SettingsWindow()
         ImGui::SameLine(); ImGui::Checkbox("Device selector", &but_devices);
         ImGui::Checkbox("Click2Hold", &click_hold);
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Seek step");
+        ImGui::TextUnformatted("Seek step, seconds");
         ImGui::SameLine(); ImGui::SliderFloat("##SeekStep", &seek_step, SeekStepMin, SeekStepMax, "%.1f", ImGuiSliderFlags_AlwaysClamp);
         if (ImGui::Checkbox("Custom scaling", &custom_scaling))
             ImGui::AppReconfigure = true;

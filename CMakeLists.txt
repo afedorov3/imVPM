@@ -41,7 +41,7 @@ option(BUILD_TESTS "" OFF)
 
 include_directories(src)
 if(CMAKE_BUILD_TYPE MATCHES Debug)
-  add_compile_definitions(_DEBUG)
+  add_compile_definitions(_DEBUG ANALYZER_DEBUG)
 endif()
 
 if(NOT WIN32)
@@ -280,7 +280,7 @@ if(BUILD_TEST_APP)
   add_executable(pitchtest src/testapp.cpp ${FFT4G_SRC}/C++/fft4g.cpp)
   set_target_properties(pitchtest PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
   target_include_directories(pitchtest PRIVATE ${FFT4G_SRC}/C++ ${MINIAUDIO_SRC})
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DANALYZER_DEBUG")
+  target_compile_definitions(pitchtest PRIVATE ANALYZER_DEBUG)
 endif()
 
 ###

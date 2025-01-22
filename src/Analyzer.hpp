@@ -330,6 +330,7 @@ private:
 
 #ifdef ANALYZER_DEBUG
 public:
+    // dumps internal buffers to disk
     void dump() {
         std::ofstream f;
         f.open("fft.txt");
@@ -363,6 +364,25 @@ public:
             f.close();
         }
         printf("last pitch: %g\n", peak_freq);
+    }
+    // fills pitch buffer with aligned to tempo 'checker' pattern, marks current and usable start/end positions
+    void test_pattern(size_t BPM)
+    {
+        pitch_buf_pos = 0;
+        total_analyze_cnt = 0;
+        const float intervals = float(ANALYZER_ANALYZE_FREQ) * 120.0f / (float)BPM;
+        for (size_t i = 0; i < Analyzer::PITCH_BUF_SIZE; i++)
+        {
+            pitch_buf[pitch_buf_pos] = std::fmod((double)total_analyze_cnt, intervals) < intervals / 2.0f ? 4500.0f : 4450.0f;
+            pitch_buf_pos = (pitch_buf_pos + 1) % PITCH_BUF_SIZE;
+
+            ++total_analyze_cnt;
+        }
+
+        // current, start, end markers
+        pitch_buf[pitch_buf_pos] = 4600.0f;
+        pitch_buf[(pitch_buf_pos + 1) % Analyzer::PITCH_BUF_SIZE] = 4300.0f;
+        pitch_buf[(pitch_buf_pos + Analyzer::PITCH_BUF_SIZE - 1) % Analyzer::PITCH_BUF_SIZE] = 4400.0f;
     }
 #endif // ANALYZER_DEBUG
 };
