@@ -2194,7 +2194,8 @@ inline void InputControl()
 }
 
 void Draw()
-{   double f_peak;
+{
+    double f_peak;
     size_t total_analyze_cnt, pitch_buf_pos;
 
     {
@@ -2353,10 +2354,9 @@ void Draw()
         float pp = -1.0f;
         ImVec2 pv;
 
-    ImGui::SetCursorPos({100, 1000}); ImGui::Text("offs %g, cnt %d, sz %zu", x_offset, max_cnt, Analyzer::PITCH_BUF_SIZE);
         auto pitch_buf = analyzer.get_pitch_buf();
         size_t pitch_buf_offset = pitch_buf_pos + Analyzer::PITCH_BUF_SIZE - (int)x_offset;
-        for(int i = 1; i <= max_cnt; ++i) // inclusize, ignore current position
+        for(int i = 1; i <= max_cnt; ++i) // ignore current position
         {
             float p = pitch_buf[(pitch_buf_offset - i) % Analyzer::PITCH_BUF_SIZE];
             if (p >= 0.0f)
