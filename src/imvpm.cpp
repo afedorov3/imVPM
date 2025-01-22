@@ -744,7 +744,8 @@ void inline Capture()
 
 void inline Record(const char *file = nullptr)
 {
-    if (!file && ah_state.isRecording()) {
+    if (!file && ah_state.isRecording())
+    {
         Capture();
         return;
     }
@@ -1250,12 +1251,21 @@ inline bool ShowWindow(WndState &state)
 // AudioHandler
 void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData, uint32_t frameCount, void *userData)
 {
+    static size_t hold_cnt = 0;
     if (hold)
+    {
+        hold_cnt++;
         return;
+    }
 
     std::lock_guard<std::mutex> lock(analyzer_mtx);
     const float *bufptr = (const float*)pData;
     const uint64_t sampleCount = (uint64_t)frameCount * channels;
+    if (hold_cnt)
+    {
+        analyzer.set_total_analyze_cnt(analyzer.get_total_analyze_cnt() + hold_cnt); // restore tempo pos
+        hold_cnt = 0;
+    }
     for (uint64_t i = 0; i < sampleCount; i += channels)
     {
         float sample = bufptr[i];
@@ -1276,11 +1286,22 @@ void eventCb(const AudioHandler::Notification &notification, void *userData)
             sep = notification.dataStr.rfind(pfd::path::separator());
             title << WINDOW_TITLE ": Playing " << (sep == std::string::npos ? notification.dataStr : notification.dataStr.c_str() + sep + 1);
             ImGui::SysSetWindowTitle(title.str().c_str());
+            {
+                std::lock_guard<std::mutex> lock(analyzer_mtx);
+                analyzer.clearData();
+                analyzer.set_total_analyze_cnt(Analyzer::PITCH_BUF_SIZE); // reset tempo pos
+            }
             break;
         case AudioHandler::EventRecordFile:
             sep = notification.dataStr.rfind(pfd::path::separator());
             title << WINDOW_TITLE ": Recording " << (sep == std::string::npos ? notification.dataStr : notification.dataStr.c_str() + sep + 1);
             ImGui::SysSetWindowTitle(title.str().c_str());
+            break;
+        case AudioHandler::EventSeek:
+            {
+                std::lock_guard<std::mutex> lock(analyzer_mtx);
+                analyzer.set_total_analyze_cnt(Analyzer::PITCH_BUF_SIZE + notification.dataU64 / Analyzer::ANALYZE_INTERVAL); // adjust tempo pos
+            }
             break;
         case AudioHandler::EventResume:
             if (notification.dataU64 != AudioHandler::EventOpCapture)
@@ -1316,9 +1337,11 @@ int ImGui::AppInit(int argc, char const *const* argv)
 
     LoadSettings();
 
+    analyzer.set_total_analyze_cnt(Analyzer::PITCH_BUF_SIZE); // initial offset for panning
     audiohandler.attachFrameDataCb(sampleCb, nullptr);
     audiohandler.attachNotificationCb(AudioHandler::EventPlayFile
                                     | AudioHandler::EventRecordFile
+                                    | AudioHandler::EventSeek
                                     | AudioHandler::EventResume
                                     | AudioHandler::EventStop,
                                       eventCb);
@@ -1496,7 +1519,8 @@ void ImGui::AppNewFrame()
         ImGui::PushFont(font_grid);
         const char **names = (const char**)lut_note[note_names];
         rullbl_sz.x = 0.0f;
-        for(int i = 0; i < 12; ++i) {
+        for(int i = 0; i < 12; ++i)
+        {
             ImVec2 size = ImGui::CalcTextSize(names[i]);
             if (size.x > rullbl_sz.x)
                 rullbl_sz = size;
@@ -1727,7 +1751,8 @@ void CaptureDevices()
         ImGui::SeparatorText("Capture devices");
         ImGui::PopStyleVar();
         const AudioHandler::Devices &devices = audiohandler.getCaptureDevices();
-        for (int n = 0; n < devices.list.size(); n++) {
+        for (int n = 0; n < devices.list.size(); n++)
+        {
             bool is_selected = devices.list[n].name == devices.selectedName;
             if (ImGui::MenuItem(devices.list[n].name.c_str(), "", is_selected) && (!is_selected || ah_state.isIdle()))
             {
@@ -1745,7 +1770,8 @@ void CaptureDevices()
 
 void PlaybackDevices()
 {
-    if (ButtonWidget(mute ? ICON_FA_VOLUME_XMARK : ICON_FA_VOLUME_OFF)) {
+    if (ButtonWidget(mute ? ICON_FA_VOLUME_XMARK : ICON_FA_VOLUME_OFF))
+    {
         audiohandler.enumerate();
         ImGui::OpenPopup("##PlaybackDevicesPopup");
     }
@@ -1761,7 +1787,8 @@ void PlaybackDevices()
         ImGui::SeparatorText("Playback devices");
         ImGui::PopStyleVar();
         const AudioHandler::Devices &devices = audiohandler.getPlaybackDevices();
-        for (int n = 0; n < devices.list.size(); n++) {
+        for (int n = 0; n < devices.list.size(); n++)
+        {
             bool is_selected = devices.list[n].name == devices.selectedName;
             if (ImGui::MenuItem(devices.list[n].name.c_str(), "", is_selected) && !is_selected)
                 audiohandler.setPreferredPlaybackDevice(devices.list[n].name.c_str());
@@ -1772,7 +1799,7 @@ void PlaybackDevices()
         audiohandler.getPlaybackVolumeFactor(vol);
         vol *= 100.0f;
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-        if (ImGui::SliderFloat("##VolumeControl", &vol, 0.0f, 100.0f, "Volume %.0f%%"), ImGuiSliderFlags_AlwaysClamp)
+        if (ImGui::SliderFloat("##VolumeControl", &vol, 0.0f, 100.0f, "Volume %.0f%%", ImGuiSliderFlags_AlwaysClamp))
         {
             play_volume = vol / 100.0f;
             mute = false;
@@ -2167,8 +2194,17 @@ inline void InputControl()
 }
 
 void Draw()
-{
-    double f_peak = analyzer.get_peak_freq();
+{   double f_peak;
+    size_t total_analyze_cnt, pitch_buf_pos;
+
+    {
+        // cache analyzer state
+        std::lock_guard<std::mutex> lock(analyzer_mtx);
+        f_peak = analyzer.get_peak_freq();
+        total_analyze_cnt = analyzer.get_total_analyze_cnt();
+        pitch_buf_pos = analyzer.get_pitch_buf_pos();
+    }
+
     float c_peak = Analyzer::freq_to_cent(f_peak);
     if (c_peak >= 0.0f)
         c_peak += c_calib;
@@ -2196,7 +2232,8 @@ void Draw()
     c_top = c_pos + wsize.y / c2y_mul;
 
     // do autoscrolling
-    if (autoscroll && !hold && ah_state.isActive() && c_peak >= 0.0 && y_ascrl_grace < ImGui::GetTime() && x_offset == 0.0f) {
+    if (autoscroll && !hold && ah_state.isActive() && c_peak >= 0.0 && y_ascrl_grace < ImGui::GetTime() && x_offset == 0.0f)
+    {
         static int velocity = 0;
 
         if (c_peak < c_pos + (float)PlotAScrlMar)
@@ -2242,39 +2279,41 @@ void Draw()
     // limit offset
     if (x_off_reset)
     {
-        x_offset = (int)(x_offset - x_zoom * 8);
+        x_offset = (int)(x_offset - (x_offset >= 200.0f ? 50.0f : 50.0f * x_offset / 200.0f)); // just arbitrary easing
         x_off_reset = x_offset > 0;
     }
     if (x_offset < 0)
         x_offset = 0.0f;
     else
-        x_offset = std::min((float)(Analyzer::PITCH_BUF_SIZE - 2 - int(x_span / x_zoom)), x_offset);
+        x_offset = std::min((float)(Analyzer::PITCH_BUF_SIZE - 1 - int(x_span / x_zoom)), x_offset);
     // adjust horizontal zoom
-    x_zoom_min = std::max(PlotXZoomMin, x_span / (float)(Analyzer::PITCH_BUF_SIZE - 2)); // limit zoom by pitch buffer size; ignore current pitch buffer element
+    x_zoom_min = std::max(PlotXZoomMin, x_span / (float)(Analyzer::PITCH_BUF_SIZE - 1)); // limit zoom by pitch buffer size; ignore current pitch buffer element
     if (x_zoom < x_zoom_min)
         x_zoom = x_zoom_min;
     float x_zoom_scaled = x_zoom * ui_scale;
 
     // horizontal grid / metronome
-    if (tempo_grid || metronome) {
-        float intervals_per_bpm = 60.0f/* sec */ / (float)tempo_val / Analyzer::get_interval_sec();
-        float total_analyze_cnt = (float)(analyzer.get_total_analyze_cnt() - (int)x_offset);
-        int beat_cnt = (int)(total_analyze_cnt / intervals_per_bpm);
-        float offset = total_analyze_cnt - (float)beat_cnt * intervals_per_bpm;
+    if (tempo_grid || metronome)
+    {
+        const float intervals_per_bpm = 60.0f/* sec */ / (float)tempo_val / Analyzer::get_interval_sec();
 
-        if (metronome) {
+        if (metronome)
+        {
             float trig_dist = 7.0f - (float)tempo_val / 60.0f;
-            float trig = (std::fmod(offset + trig_dist, intervals_per_bpm) - trig_dist) / trig_dist;
+            float trig = (std::fmod(std::fmod((double)total_analyze_cnt, intervals_per_bpm) + trig_dist, intervals_per_bpm) - trig_dist) / trig_dist;
             if (trig <= 1.0f)
                 draw_list->AddRect(ImVec2(0.0f, 0.0f), ImVec2(wsize.x, wsize.y), plot_colors[PlotIdxMetronome], 0.0f, ImDrawFlags_None, (1.0f - std::fabs(trig)) * 20.0f * ui_scale);
         }
 
-        if (tempo_grid) {
-            offset = x_right - offset * x_zoom_scaled;
-            while(offset > x_left) {
+        if (tempo_grid)
+        {
+            size_t beat_cnt = ((double)total_analyze_cnt - (int)x_offset) / intervals_per_bpm;
+            float offset = x_right - std::fmod((double)(total_analyze_cnt - (int)x_offset), intervals_per_bpm) * x_zoom_scaled;
+            while(offset > x_left)
+            {
                 draw_list->AddLine(ImVec2(offset, 0.0f), ImVec2(offset, wsize.y), plot_colors[PlotIdxTempo],
                     lut_linew[PlotIdxTempo + (tempo_meter > 0 && beat_cnt % tempo_meter == 0)] * ui_scale);
-                offset -=  x_zoom_scaled * intervals_per_bpm;
+                offset -= x_zoom_scaled * intervals_per_bpm;
                 beat_cnt--;
             }
         }
@@ -2284,7 +2323,8 @@ void Draw()
     ImGui::PushFont(font_grid);
     int key_bot = (int)(c_pos / c_dist);
     int key_top = key_bot + (int)(wsize.y / step) + 1;
-    for (int key = key_bot; key <= key_top; ++key) {
+    for (int key = key_bot; key <= key_top; ++key)
+    {
         float y = std::roundf(c2y_off - c_dist * key * c2y_mul);
         int note =   (key + 24) % 12;
         int note_scaled = (note - scale_key + 12) % 12;
@@ -2307,18 +2347,18 @@ void Draw()
 
     // plot the data
     {
-        int max_cnt = (int)((x_right - x_left) / x_zoom_scaled) + 1; // include the start point
-        float line_w =  lut_linew[PlotIdxPitch] * ui_scale;
+        int max_cnt = (int)((x_right - x_left) / x_zoom_scaled);
+        float line_w = lut_linew[PlotIdxPitch] * ui_scale;
         ImU32 color = plot_colors[PlotIdxPitch];
         float pp = -1.0f;
         ImVec2 pv;
 
-        std::lock_guard<std::mutex> lock(analyzer_mtx);
-        std::shared_ptr<const float[]> pitch_buf = analyzer.get_pitch_buf();
-        const size_t pitch_buf_pos = analyzer.get_pitch_buf_pos() - (int)x_offset;
-        for(int i = 0; i < max_cnt; ++i)
+    ImGui::SetCursorPos({100, 1000}); ImGui::Text("offs %g, cnt %d, sz %zu", x_offset, max_cnt, Analyzer::PITCH_BUF_SIZE);
+        auto pitch_buf = analyzer.get_pitch_buf();
+        size_t pitch_buf_offset = pitch_buf_pos + Analyzer::PITCH_BUF_SIZE - (int)x_offset;
+        for(int i = 1; i <= max_cnt; ++i) // inclusize, ignore current position
         {
-            float p = pitch_buf[(pitch_buf_pos + Analyzer::PITCH_BUF_SIZE - 1 - i) % Analyzer::PITCH_BUF_SIZE];
+            float p = pitch_buf[(pitch_buf_offset - i) % Analyzer::PITCH_BUF_SIZE];
             if (p >= 0.0f)
             {
                 ImVec2 v(x_right - x_zoom_scaled * i, std::roundf(c2y_off - (p + c_calib) * c2y_mul));
@@ -2333,12 +2373,15 @@ void Draw()
     // update mean frequency buffer
     f_peak_buf[f_peak_buf_pos++] = f_peak;
     f_peak_buf_pos = f_peak_buf_pos % f_peak_buf.size();
-    if (c_peak >= 0.0f) {
+    if (c_peak >= 0.0f)
+    {
         int meandiv = 0;
         double f_mean = 0.0;
-        for(int i = 0; i < f_peak_buf.size(); ++i) {
+        for(int i = 0; i < f_peak_buf.size(); ++i)
+        {
             double freq = f_peak_buf[i];
-            if (freq > 0.0) {
+            if (freq > 0.0)
+            {
                 f_mean += freq;
                 ++meandiv;
             }
@@ -2357,7 +2400,8 @@ void Draw()
                          note, 1 << (int)!!lut_number[1][note], octave, plot_colors[PlotIdxNote], draw_list);
         ImGui::PopFont();
         // draw tuner
-        if (show_tuner) {
+        if (show_tuner)
+        {
             float y_tuner = (top_feat_pos + 6.0f) * ui_scale;
             float y_long  = y_tuner + 7.0f * ui_scale;
             float y_short = y_tuner + 4.0f * ui_scale;
@@ -2372,11 +2416,14 @@ void Draw()
             float stop = c_mean + 100.0f;
             int pos = (int)((c_mean - 100.0f) / 10.0f) * 10;
             ImU32 color = plot_colors[PlotIdxTuner];
-            for ( ; (float)pos <= stop; pos += 10) {
+            for ( ; (float)pos <= stop; pos += 10)
+            {
                 float x_pos = std::roundf(x_center + ((float)pos - c_mean) * zoom);
                 float linew = lut_linew[PlotIdxSemitone] * ui_scale;
-                switch (pos % 100) {
-                case 0: {
+                switch (pos % 100)
+                {
+                case 0:
+                {
                     int note = pos % 1200 / 100;
 
                     // tuner note
@@ -2487,10 +2534,12 @@ void SpectrumWindow(bool *show)
             f_peak = analyzer.get_peak_freq();
             auto fft_buf = analyzer.get_fft_buf();
             size_t cnt = 0;
-            for (double f = fbot; f <= ftop; f *= step) {
+            for (double f = fbot; f <= ftop; f *= step)
+            {
                 size_t q = (size_t)round(f / fft_quant), qtop = (size_t)round(f * step / fft_quant);
                 float a = 0.0f;
-                do {
+                do
+                {
                     float b = (float)std::log(Analyzer::power(fft_buf[q * 2], fft_buf[q * 2 + 1]));
                     if (b > a) a = b;
                 } while (++q < qtop);
@@ -2523,7 +2572,8 @@ void SpectrumWindow(bool *show)
     rmax.x = rmin.x + width;
     double dt = 1.0f / ImGui::GetIO().Framerate;
     constexpr float smoothness = 10;
-    for (size_t i = 0; i < keycnt; ++i) {
+    for (size_t i = 0; i < keycnt; ++i)
+    {
         out_smooth[i] += (out_log[i] - out_smooth[i]) * smoothness * dt;
         rmin.y = rmax.y - std::max(margin, out_smooth[i] * height);
         draw_list->AddRectFilled(rmin, rmax, i == n_peak ? plot_colors[PlotIdxPitch] : UI_colors[UIIdxDefault]);
@@ -2586,7 +2636,7 @@ void SettingsWindow()
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Volume threshold");
         ImGui::SameLine();
-        if (ImGui::SliderFloat("##VolumeThreshold", &vol_thres, VolThresMin, VolThresMax, "%.2f"), ImGuiSliderFlags_AlwaysClamp)
+        if (ImGui::SliderFloat("##VolumeThreshold", &vol_thres, VolThresMin, VolThresMax, "%.2f", ImGuiSliderFlags_AlwaysClamp))
             analyzer.set_threshold((double)vol_thres);
     }
 
@@ -2618,7 +2668,7 @@ void SettingsWindow()
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(oct_offset == OctOffsetA4 ? "Calibration A4 =" : "Calibration A3 =");
         ImGui::SameLine();
-        if (ImGui::SliderFloat("##Calibration", &calibration, PitchCalibMin, PitchCalibMax, "%.1f Hz"), ImGuiSliderFlags_AlwaysClamp)
+        if (ImGui::SliderFloat("##Calibration", &calibration, PitchCalibMin, PitchCalibMax, "%.1f Hz", ImGuiSliderFlags_AlwaysClamp))
             UpdateCalibration();
     }
 
@@ -2656,7 +2706,7 @@ void SettingsWindow()
         ImGui::SameLine(); ImGui::Checkbox("Frequency", &show_freq);
         ImGui::SameLine();
         int samples = (int)f_peak_buf.size();
-        if (ImGui::SliderInt("##Smoothing", &samples, TunerSmoothMin, TunerSmoothMax, "smoothing = %d"), ImGuiSliderFlags_AlwaysClamp)
+        if (ImGui::SliderInt("##Smoothing", &samples, TunerSmoothMin, TunerSmoothMax, "smoothing = %d", ImGuiSliderFlags_AlwaysClamp))
             UpdatePeakBuf(samples);
         ImGui::Unindent();
     }
