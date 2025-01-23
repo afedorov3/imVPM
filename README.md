@@ -92,6 +92,8 @@ to configure run:
 ```
 cmake . -B build -GNinja -DCMAKE_BUILD_TYPE=Release
 ```
+**IMPORTANT**:
+If you're building for Windows using MSYS2, also specify **-DWIN32=yes** as it probably won't be detected by CMake.  
 CMake will download required dependencies from the GitHub and produce the build configuration.  
 You could also specify **-DVENDORED_BUILD=yes** to use local dependency sources
 that you provide in the **external** directory.  
@@ -111,4 +113,6 @@ List of required dependencies:
 if configure succedes, to start the build run:
 ```
 cmake --build build
+cmake --install build --strip
 ```
+cmake --install will put the resulting executable into the bin directory and create the release archive

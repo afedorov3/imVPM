@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(imVocalPitchMonitor DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
+project(imVocalPitchMonitor VERSION 0.2.0 DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
 
 if(NOT DEFINED OPUS_SUPPORT)
   set(OPUS_SUPPORT "yes")
@@ -30,6 +30,12 @@ endif()
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR})
+
+if(CMAKE_BUILD_TYPE STREQUAL "")
+  set(CMAKE_BUILD_TYPE "Release")
+endif()
+
 find_program(PATCH patch)
 if(PATCH STREQUAL "PATCH-NOTFOUND")
   message(FATAL_ERROR "patch utility not available")
@@ -44,7 +50,9 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
   add_compile_definitions(_DEBUG ANALYZER_DEBUG)
 endif()
 
-if(NOT WIN32)
+if(WIN32)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+else()
   find_package(PkgConfig REQUIRED)
 endif()
 
@@ -118,9 +126,7 @@ else()
 ###### FetchContent
 
   if(WIN32)
-    execute_process(
-      COMMAND ${CMAKE_COMMAND} -E echo ===== MAKE SURE you have git core.autocrlf set to false and core.eol set to lf =====
-    )
+    message(NOTICE "\n===== MAKE SURE you have git core.autocrlf set to false and core.eol set to lf =====\n")
   endif()
 
   set(IMGUI_SRC ${CMAKE_BINARY_DIR}/_deps/imgui-src)
@@ -138,9 +144,7 @@ else()
 
   include(FetchContent)
 
-  execute_process(
-    COMMAND ${CMAKE_COMMAND} -E echo Downloading external dependencies...
-  )
+  message(STATUS "Downloading external dependencies...")
 
   FetchContent_Declare(
     imgui
@@ -278,17 +282,17 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp
 ###
 if(BUILD_TEST_APP)
   add_executable(pitchtest src/testapp.cpp ${FFT4G_SRC}/C++/fft4g.cpp)
-  set_target_properties(pitchtest PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
   target_include_directories(pitchtest PRIVATE ${FFT4G_SRC}/C++ ${MINIAUDIO_SRC})
   target_compile_definitions(pitchtest PRIVATE ANALYZER_DEBUG)
+  install(TARGETS pitchtest)
 endif()
 
 ###
 ### imVocalPitchMonitor
 ###
 add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp ${MINIAUDIO_SRC}/extras/stb_vorbis.c src/imgui/backends/${IMVPM_BACKEND}_${IMVPM_GRAPHICS}.cpp ${FFT4G_SRC}/C++/fft4g.cpp ${IMGUI_SRC}/backends/imgui_impl_${IMVPM_GRAPHICS}.cpp ${IMGUI_SRC}/backends/imgui_impl_${IMVPM_BACKEND}.cpp ${IMGUI_SRC}/imgui.cpp ${IMGUI_SRC}/imgui_widgets.cpp ${IMGUI_SRC}/imgui_tables.cpp ${IMGUI_SRC}/imgui_draw.cpp)
-set_target_properties(imvpm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "bin")
 target_include_directories(imvpm PRIVATE src/imgui ${FFT4G_SRC}/C++ ${MINIAUDIO_SRC} ${IMGUI_SRC} ${IMGUI_SRC}/backends ${FONTS_SRC} ${PFD_SRC} ${SIMPLEINI_SRC} ${POPL_SRC}/include)
+target_compile_definitions(imvpm PRIVATE VER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR} VER_VERSION_MINOR=${PROJECT_VERSION_MINOR} VER_VERSION_PATCH=${PROJECT_VERSION_PATCH})
 if(OPUS_SUPPORT)
   target_compile_definitions(imvpm PRIVATE HAVE_OPUS)
   if(WIN32)
@@ -297,18 +301,20 @@ if(OPUS_SUPPORT)
   else()
     pkg_search_module(OPUSFILE REQUIRED opusfile)
     target_include_directories(imvpm PRIVATE ${OPUSFILE_INCLUDE_DIRS})
-    target_link_libraries(imvpm PRIVATE ${OPUSFILE_LIBRARIES})
+    target_link_libraries(imvpm PRIVATE opusfile.a opus.a libogg.a)
   endif()
 endif()
+install(TARGETS imvpm)
 
 ###
 ### compiler options
 ###
 if(WIN32)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_link_options(imvpm PRIVATE "-municode")
+    target_link_options(imvpm PRIVATE -municode -static)
   endif()
 
+  set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -DVER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR} -DVER_VERSION_MINOR=${PROJECT_VERSION_MINOR} -DVER_VERSION_PATCH=${PROJECT_VERSION_PATCH}")
   if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     # forward debug flag to RC
     set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -D_DEBUG")
@@ -329,7 +335,7 @@ endif()
 ### GUI dependencies
 ###
 if(IMVPM_BACKEND STREQUAL "win32")
-  target_link_libraries(imvpm PRIVATE Dwmapi)
+  target_link_libraries(imvpm PRIVATE Dwmapi gdi32 comdlg32 uuid)
 elseif(IMVPM_BACKEND STREQUAL "sdl2")
   pkg_search_module(SDL2 REQUIRED sdl2)
   include_directories(${SDL2_INCLUDE_DIRS})
@@ -345,3 +351,8 @@ elseif(IMVPM_GRAPHICS STREQUAL "opengl3")
 elseif(IMVPM_GRAPHICS STREQUAL "dx11")
   target_link_libraries(imvpm PRIVATE d3d11 d3dcompiler)
 endif()
+
+###
+### produce release archive
+###
+install(CODE "include(${CMAKE_SOURCE_DIR}/assets/archive.cmake)\narchive_target(${CMAKE_SOURCE_DIR}/bin imvpm${CMAKE_EXECUTABLE_SUFFIX} \"${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}\" \"${IMVPM_BACKEND}-${IMVPM_GRAPHICS}\")")

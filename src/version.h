@@ -1,11 +1,5 @@
 #pragma once
 
-#define VER_VERSION_MAJOR 0
-#define VER_VERSION_MINOR 1
-#define VER_VERSION_PATCH 0
-
-
-
 #define VER_STRINGIFY(...) #__VA_ARGS__
 #define VER_TOSTRING(x) VER_STRINGIFY(x)
 
