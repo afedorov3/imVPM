@@ -648,6 +648,32 @@ static inline bool ends_with(std::string const & value, std::string const & endi
     return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
 
+static std::string TruncateUTF8String(const std::string &str, size_t max_size)
+{
+    if (str.size() < max_size)
+        return std::string(str);
+    if (max_size <= 1)
+        return "";
+
+    size_t pos, last_pos = 0;
+    for (pos = 0; pos < str.size(); ++pos)
+    {
+        unsigned char byte = static_cast<unsigned char>(str[pos]);
+        if ((byte & 0xC0) != 0x80)
+        {
+            if (!max_size)
+                break;
+            max_size--;
+            last_pos = pos;
+        }
+    }
+
+    if (pos == str.size())
+        return std::string(str);
+
+    return str.substr(0, last_pos) + "…";
+}
+
 static void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpidx, int octave, ImU32 color, ImDrawList* draw_list)
 {
     static char label[16];
@@ -1432,6 +1458,7 @@ bool ImGui::AppConfig(bool startup)
         0xA640, 0xA69F, // Cyrillic Extended-B
         0x266D, 0x266F, // ♭, ♯
         0x1D2E, 0x1D3E, // Superscript capital
+        0x2026, 0x2026, // Horizontal Ellipsis
         0
     };
     static const ImWchar ranges_icons_regular[] =
@@ -1756,7 +1783,7 @@ static void CaptureDevices()
         for (int n = 0; n < devices.list.size(); n++)
         {
             bool is_selected = devices.list[n].name == devices.selectedName;
-            if (ImGui::MenuItem(devices.list[n].name.c_str(), "", is_selected) && (!is_selected || ah_state.isIdle()))
+            if (ImGui::MenuItem(TruncateUTF8String(devices.list[n].name, 60).c_str(), "", is_selected) && (!is_selected || ah_state.isIdle()))
             {
                 audiohandler.setPreferredCaptureDevice(devices.list[n].name.c_str());
                 if (ah_state.isIdle())
@@ -1792,7 +1819,7 @@ static void PlaybackDevices()
         for (int n = 0; n < devices.list.size(); n++)
         {
             bool is_selected = devices.list[n].name == devices.selectedName;
-            if (ImGui::MenuItem(devices.list[n].name.c_str(), "", is_selected) && !is_selected)
+            if (ImGui::MenuItem(TruncateUTF8String(devices.list[n].name, 60).c_str(), "", is_selected) && !is_selected)
                 audiohandler.setPreferredPlaybackDevice(devices.list[n].name.c_str());
         }
         audiohandler.unlockDevices();

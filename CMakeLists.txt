@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(imVocalPitchMonitor VERSION 0.2.0 DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
+project(imVocalPitchMonitor VERSION 0.2.1 DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
 
 if(NOT DEFINED OPUS_SUPPORT)
   set(OPUS_SUPPORT "yes")
@@ -27,7 +27,7 @@ if(NOT DEFINED IMVPM_GRAPHICS)
   endif()
 endif()
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR})
@@ -54,6 +54,9 @@ if(WIN32)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 else()
   find_package(PkgConfig REQUIRED)
+  # BSD stuff
+  link_directories("/usr/local/lib")
+  add_link_options("-pthread")
 endif()
 
 if(VENDORED_BUILD)
@@ -235,23 +238,23 @@ set(FONTS_SRC ${CMAKE_SOURCE_DIR}/external/fonts)
 
 if(IMVPM_GRAPHICS STREQUAL "dx11")
   execute_process(
-    COMMAND ${PATCH} -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/imgui/ImGui_ImplDX11_ReCreateFontsTexture.patch
+    COMMAND ${PATCH} -Ns -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/imgui/ImGui_ImplDX11_ReCreateFontsTexture.patch
     WORKING_DIRECTORY ${IMGUI_SRC}
   )
 endif()
 
 execute_process(
-  COMMAND ${PATCH} -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/miniaudio/ma_default_vfs_seek__win32.patch
+  COMMAND ${PATCH} -Ns -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/miniaudio/miniaudio_fixes.patch
   WORKING_DIRECTORY ${MINIAUDIO_SRC}
 )
 
 execute_process(
-  COMMAND ${PATCH} -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/fft4g/fft4g-size.patch
+  COMMAND ${PATCH} -Ns -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/fft4g/fft4g-size.patch
   WORKING_DIRECTORY ${FFT4G_SRC}
 )
 
 execute_process(
-  COMMAND ${PATCH} -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/portable-file-dialogs/portable-file-dialogs-fixes.patch
+  COMMAND ${PATCH} -Ns -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/portable-file-dialogs/portable-file-dialogs-fixes.patch
   WORKING_DIRECTORY ${PFD_SRC}
 )
 
@@ -301,7 +304,18 @@ if(OPUS_SUPPORT)
   else()
     pkg_search_module(OPUSFILE REQUIRED opusfile)
     target_include_directories(imvpm PRIVATE ${OPUSFILE_INCLUDE_DIRS})
-    target_link_libraries(imvpm PRIVATE opusfile.a opus.a libogg.a)
+    find_library(OPUSFILE_ARCHIVE libopusfile.a)
+    find_library(OPUS_ARCHIVE libopus.a)
+    find_library(OGG_ARCHIVE libogg.a)
+    if(    NOT OPUSFILE_ARCHIVE STREQUAL OPUSFILE_ARCHIVE-NOTFOUND
+       AND NOT OPUS_ARCHIVE STREQUAL OPUS_ARCHIVE-NOTFOUND
+       AND NOT OGG_ARCHIVE STREQUAL OGG_ARCHIVE-NOTFOUND)
+      # link statically if all the required archives were found
+      target_link_libraries(imvpm PRIVATE opusfile.a opus.a libogg.a)
+    else()
+      # otherwise link dynamically
+      target_link_libraries(imvpm PRIVATE ${OPUSFILE_LIBRARIES})
+    endif()
   endif()
 endif()
 install(TARGETS imvpm)

@@ -12,20 +12,12 @@
 #define MA_NO_RESOURCE_MANAGER
 #define MA_NO_GENERATION
 #define MA_NO_ENGINE
-#define MA_ENABLE_ONLY_SPECIFIC_BACKENDS
 #define MA_ENABLE_NULL
 #if defined(HAVE_VORBIS)
 #define MA_NO_VORBIS
 #endif
 #if defined(HAVE_OPUS)
 #define MA_NO_OPUS
-#endif
-
-// FIXME define in Makefile
-#ifdef _WIN32
-#define MA_ENABLE_WASAPI
-#else
-#define MA_ENABLE_ALSA
 #endif
 
 #include "miniaudio.h"

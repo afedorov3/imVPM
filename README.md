@@ -65,7 +65,7 @@ Build tools required:
  * CMake
  * git
  * ninja
- * C++11 compiler
+ * C++17 compiler
  * patch (on windows you'll get it with git, just
    ```
    set PATH=%PATH%;%PROGRAMFILES%\Git\usr\bin
@@ -76,6 +76,7 @@ Build tools required:
    * MSVC libs  
      if you're using MinGW, it bundles both
  * Linux build:
+   * pkg-config
    * SDL2 (libsdl2-dev)
    * vulkan (libvulkan-dev)
    * kdialog / zenity

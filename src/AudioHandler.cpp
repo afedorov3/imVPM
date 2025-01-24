@@ -1,4 +1,3 @@
-#include <cstdio> // FIXME remove
 #include <cctype> // toupper
 #include <sstream>
 #include <iomanip>
@@ -7,13 +6,14 @@
 #include <algorithm>
 
 /* Known issues:
-   Ogg length always reported as 0 on windows due to ma_decoder_init_file_w redirection
+   Ogg length is always reported as 0 on windows due to ma_decoder_init_file_w redirection
 */
 
 #define STB_VORBIS_HEADER_ONLY
 #include "extras/stb_vorbis.c"
 
 #if defined(_DEBUG) || defined(DEBUG)
+#include <cstdio>
 #define DBG(...) fprintf(stderr, __VA_ARGS__)
 #else
 #define DBG(...)
