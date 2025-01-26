@@ -36,26 +36,27 @@
 Index of this file:
 
 // [SECTION] App state
-// [SECTION] Forward Declarations
+// [SECTION] Forward declarations
 // [SECTION] Helpers
 //
 // [SECTION] Backend callbacks
-//   App Init function           / AppInit()
-//   App Config function         / AppConfig()
-//   App Draw Frame function     / AppDrawFrame()
-//   App Destroy function        / AppDestroy()
+//   App init function           / AppInit()
+//   App config function         / AppConfig()
+//   App draw frame function     / AppDrawFrame()
+//   App destroy function        / AppDestroy()
 //
 // [SECTION] Main window
 //   Widgets
 //   User input handler          / InputControl()
-//   Window Draw function        / Draw()
+//   Window draw function        / Draw()
 //   Message display function    / ProcessLog()
 //
 // [SECTION] Child windows
-//   Settings Window             / SettingsWindow()
+//   Spectrum plot               / SpectrumWindow()
+//   Settings window             / SettingsWindow()
 //
 // [SECTION] Standard windows
-//   About Window                / ShowAboutWindow()
+//   About window                / ShowAboutWindow()
 
 */
 
@@ -64,9 +65,7 @@ Index of this file:
 #endif
 
 #define NOMINMAX
-#define IMGUI_DEFINE_MATH_OPERATORS
-#include <imgui.h>
-#include <IconsFontAwesome6.h>
+
 // bumps FFT resolution (and the detection precision) at the cost of performance drop
 // see assets/dump/charts.ods:match-compare for comparison results
 //#define ANALYZER_BASE_FREQ FREQ_A2
@@ -75,13 +74,7 @@ Index of this file:
 #include "Analyzer.hpp"
 #include "AudioHandler.h"
 #include "fonts.h"
-
-#include <portable-file-dialogs.h>
-#include <SimpleIni.h>
-#include <popl.hpp>
-
-#define IMGUI_APP
-#include "imgui_local.h"
+#include <IconsFontAwesome6.h>
 #include "version.h"
 
 // System includes
@@ -89,11 +82,20 @@ Index of this file:
 #include <cmath>            // sin, fmod, fabs
 #include <algorithm>        // min, max
 #include <vector>
+#include <limits>
 #if !defined(_MSC_VER) || _MSC_VER >= 1800
 #include <inttypes.h>       // PRId64/PRIu64, not avail in some MinGW headers.
 #endif
 #include <sys/stat.h>
-#include <limits>
+
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include <imgui.h>
+#include <portable-file-dialogs.h>
+#include <SimpleIni.h>
+#include <popl.hpp>
+
+#define IMGUI_APP
+#include "imgui_local.h"
 
 using namespace logger;
 
@@ -110,40 +112,14 @@ using namespace logger;
 #pragma clang diagnostic ignored "-Wunknown-warning-option"         // warning: unknown warning group 'xxx'                     // not all warnings are known by all Clang versions and they tend to be rename-happy.. so ignoring warnings triggers new warnings on some configuration. Great!
 #endif
 #pragma clang diagnostic ignored "-Wunknown-pragmas"                // warning: unknown warning group 'xxx'
-#pragma clang diagnostic ignored "-Wold-style-cast"                 // warning: use of old-style cast                           // yes, they are more terse.
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"        // warning: 'xx' is deprecated: The POSIX name for this..   // for strdup used in demo code (so user can copy & paste the code)
-#pragma clang diagnostic ignored "-Wint-to-void-pointer-cast"       // warning: cast to 'void *' from smaller integer type
-#pragma clang diagnostic ignored "-Wformat-security"                // warning: format string is not a string literal
 #pragma clang diagnostic ignored "-Wexit-time-destructors"          // warning: declaration requires an exit-time destructor    // exit-time destruction order is undefined. if MemFree() leads to users code that has been disabled before exit it might cause problems. ImGui coding style welcomes static/globals.
 #pragma clang diagnostic ignored "-Wunused-macros"                  // warning: macro is not used                               // we define snprintf/vsnprintf on Windows so they are available, but not always used.
 #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"  // warning: zero as null pointer constant                   // some standard header variations use #define NULL 0
 #pragma clang diagnostic ignored "-Wdouble-promotion"               // warning: implicit conversion from 'float' to 'double' when passing argument to function  // using printf() is a misery with this as C++ va_arg ellipsis changes float to double.
-#pragma clang diagnostic ignored "-Wreserved-id-macro"              // warning: macro name is a reserved identifier
-#pragma clang diagnostic ignored "-Wimplicit-int-float-conversion"  // warning: implicit conversion from 'xxx' to 'float' may lose precision
 #elif defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wpragmas"                  // warning: unknown option after '#pragma GCC diagnostic' kind
-#pragma GCC diagnostic ignored "-Wint-to-pointer-cast"      // warning: cast to pointer from integer of different size
-#pragma GCC diagnostic ignored "-Wformat-security"          // warning: format string is not a string literal (potentially insecure)
 #pragma GCC diagnostic ignored "-Wdouble-promotion"         // warning: implicit conversion from 'float' to 'double' when passing argument to function
-#pragma GCC diagnostic ignored "-Wconversion"               // warning: conversion to 'xxxx' from 'xxxx' may alter its value
 #pragma GCC diagnostic ignored "-Wmisleading-indentation"   // [__GNUC__ >= 6] warning: this 'if' clause does not guard this statement      // GCC 6.0+ only. See #883 on GitHub.
-#endif
-
-// Play it nice with Windows users (Update: May 2018, Notepad now supports Unix-style carriage returns!)
-#ifdef _WIN32
-#define IM_NEWLINE  "\r\n"
-typedef std::wstring pathstr_t;
-#else
-#define IM_NEWLINE  "\n"
-typedef std::string pathstr_t;
-#endif
-
-// Helpers
-#if defined(_MSC_VER) && !defined(snprintf)
-#define snprintf    _snprintf
-#endif
-#if defined(_MSC_VER) && !defined(vsnprintf)
-#define vsnprintf   _vsnprintf
 #endif
 
 // Format specifiers for 64-bit values (hasn't been decently standardized before VS2013)
@@ -180,6 +156,12 @@ typedef std::string pathstr_t;
 #define PATH_MAX 4096
 #endif // !PATH_MAX
 
+#if defined(_WIN32)
+typedef std::wstring pathstr_t;
+#else
+typedef std::string pathstr_t;
+#endif
+
 //-----------------------------------------------------------------------------
 // [SECTION] App state
 //-----------------------------------------------------------------------------
@@ -208,11 +190,11 @@ static constexpr const char *lut_note[][12] = {
                                              {  "Do", "Do", "Re", "Re", "Mi", "Fa", "Fa", "Sol","Sol","La", "La", "Si"}  // NoteNamesRomance
                                               };
 static constexpr const char *lut_semisym[] = {   "",  "♯",  " " }; // semitone symbol selector, [0] elem for labels with no semitone indicator
-static constexpr const char lut_number[][12] = {  // gives note number or 0 if semitone
+static constexpr       char lut_number[][12] = {  // gives note number or 0 if semitone
                                              {   1 ,   0 ,   2 ,   3 ,   0 ,   4 ,   0 ,   5 ,   6 ,   0 ,   7 ,   0  }, // Minor scale
                                              {   1 ,   0 ,   2 ,   0 ,   3 ,   4 ,   0 ,   5 ,   0 ,   6 ,   0 ,   7  }  // Major scale
                                                };
-static constexpr const float   lut_linew[] = { // plot features line widths
+static constexpr       float   lut_linew[] = { // plot features line widths
                                 // Normal: Semitone,  C,    D,    E,    F,    G,    A,    B
                                                1.5f, 2.5f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f,
                                 // Chromatic:   C,  C♯/D♭,  D,  D♯/E♭,  E,    F,  F♯/G♭,  G,  G♯/A♭,  A,  A♯/B♭,  B
@@ -224,7 +206,7 @@ static constexpr const float   lut_linew[] = { // plot features line widths
                                              };
 
 // orig palette
-constexpr const ImU32 palette[] = {
+constexpr ImU32 palette[] = {
     IM_COL32(255,   0,   0, 255),  // RED
     IM_COL32(255, 192, 203, 255),  // PINK
     IM_COL32(128,   0, 128, 255),  // PURPLE
@@ -760,9 +742,9 @@ static void Seek(double seek_to_second, bool relative = false)
     {
         int64_t relframes = seek_to_second * audiohandler.sampleRateHz;
         if (relframes >= 0)
-            frame = (relframes < ah_len - ah_pos) ? ah_pos + relframes : ah_len;
+            frame = ((uint64_t)relframes < ah_len - ah_pos) ? ah_pos + relframes : ah_len;
         else
-            frame = (-relframes < ah_pos) ? ah_pos + relframes : 0;
+            frame = ((uint64_t)-relframes < ah_pos) ? ah_pos + relframes : 0;
     }
 
     audiohandler.seek(frame);
@@ -1087,12 +1069,14 @@ static void LoadSettings()
                         ImS32 val = strtol(pv, &end, 0);
                         if (*end != ' ' && *end != '\0')
                             break;
-                        reinterpret_cast<ImS32*>(&winpos.x)[i] = val; // yacky
+                        reinterpret_cast<ImS32*>(&winpos.x)[i] = val;
                     }
                     if (i == 4)
                         ImGui::SysWndPos = winpos;
                 }
-                GetIniValue(ini, "imvpm", "wnd_state", (int&)ImGui::SysWndState, ImGui::WSNormal, ImGui::WSMaximized);
+                int wstate = ImGui::WSNormal;
+                if (GetIniValue(ini, "imvpm", "wnd_state", wstate, ImGui::WSNormal, ImGui::WSMaximized))
+                    ImGui::SysWndState = (ImGui::WindowState)wstate;
             }
             GETVAL("imvpm", record_dir, IM_ARRAYSIZE(record_dir));
             {
@@ -1163,7 +1147,7 @@ static void SaveSettings()
     {
         char key[64];
 
-        for (size_t i = 0; i < (int)plot_colors.size(); i++)
+        for (size_t i = 0; i < plot_colors.size(); i++)
         {
             if (i == PlotIdxReserved) continue;
             snprintf(key, IM_ARRAYSIZE(key), "plot_colors_%zu", i);
@@ -1286,6 +1270,9 @@ static inline bool ShowWindow(WndState &state)
 // AudioHandler
 void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData, uint32_t frameCount, void *userData)
 {
+    (void)format;
+    (void)userData;
+
     std::lock_guard<std::mutex> lock(analyzer_mtx);
     if (hold)
     {
@@ -1311,6 +1298,8 @@ void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData,
 
 void eventCb(const AudioHandler::Notification &notification, void *userData)
 {
+    (void)userData;
+
     std::stringstream title;
     size_t sep;
 
@@ -1779,8 +1768,8 @@ static void CaptureDevices()
         ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextAlign, ImVec2(0.5f, 0.75f));
         ImGui::SeparatorText("Capture devices");
         ImGui::PopStyleVar();
-        const AudioHandler::Devices &devices = audiohandler.getCaptureDevices();
-        for (int n = 0; n < devices.list.size(); n++)
+        auto devices = audiohandler.getCaptureDevices();
+        for (size_t n = 0; n < devices.list.size(); n++)
         {
             bool is_selected = devices.list[n].name == devices.selectedName;
             if (ImGui::MenuItem(TruncateUTF8String(devices.list[n].name, 60).c_str(), "", is_selected) && (!is_selected || ah_state.isIdle()))
@@ -1815,8 +1804,8 @@ static void PlaybackDevices()
         ImGui::PushStyleVar(ImGuiStyleVar_SeparatorTextAlign, ImVec2(0.5f, 0.75f));
         ImGui::SeparatorText("Playback devices");
         ImGui::PopStyleVar();
-        const AudioHandler::Devices &devices = audiohandler.getPlaybackDevices();
-        for (int n = 0; n < devices.list.size(); n++)
+        auto devices = audiohandler.getPlaybackDevices();
+        for (size_t n = 0; n < devices.list.size(); n++)
         {
             bool is_selected = devices.list[n].name == devices.selectedName;
             if (ImGui::MenuItem(TruncateUTF8String(devices.list[n].name, 60).c_str(), "", is_selected) && !is_selected)
@@ -2034,8 +2023,8 @@ static void PlaybackProgress()
     if (hover && progress_hover)
     {
         ImVec2 mouse_pos = ImGui::GetMousePos() - ImGui::GetWindowPos();
-        uint64_t seek_to = IM_CLAMP(uint64_t(mouse_pos.x / size.x * ah_len), 0, ah_len);
-        ImGui::SetTooltip(audiohandler.framesToTime(seek_to).c_str());
+        uint64_t seek_to = std::min(uint64_t(mouse_pos.x / size.x * ah_len), ah_len);
+        ImGui::SetTooltip("%s", audiohandler.framesToTime(seek_to).c_str());
         if (seek && ah_state.canSeek())
             Seek(seek_to);
     }
@@ -2098,7 +2087,7 @@ static bool ColorPicker(const char *label, ImU32 &color, float split)
                 color = palette[n];
                 ret = true;
             }
-            ImGui::SetItemTooltip(palette_names[n]);
+            ImGui::SetItemTooltip("%s", palette_names[n]);
             ImGui::PopID();
         }
         ImGui::EndGroup();
@@ -2407,7 +2396,7 @@ static void Draw()
     {
         int meandiv = 0;
         double f_mean = 0.0;
-        for(int i = 0; i < f_peak_buf.size(); ++i)
+        for(size_t i = 0; i < f_peak_buf.size(); ++i)
         {
             double freq = f_peak_buf[i];
             if (freq > 0.0)
@@ -2606,7 +2595,7 @@ static void SpectrumWindow(bool *show)
     {
         out_smooth[i] += (out_log[i] - out_smooth[i]) * smoothness * dt;
         rmin.y = rmax.y - std::max(margin, out_smooth[i] * height);
-        draw_list->AddRectFilled(rmin, rmax, i == n_peak ? plot_colors[PlotIdxPitch] : UI_colors[UIIdxDefault]);
+        draw_list->AddRectFilled(rmin, rmax, (int)i == n_peak ? plot_colors[PlotIdxPitch] : UI_colors[UIIdxDefault]);
         rmin.x += adv;
         rmax.x += adv;
     }
@@ -2659,7 +2648,7 @@ static void SettingsWindow()
         ImGui::PopStyleColor();
     }
 
-    ImGui::PushItemWidth(-std::numeric_limits<float>::min());
+    ImGui::PushItemWidth(-FLT_MIN);
 
     // Analyzer control
     {
@@ -2815,25 +2804,25 @@ static void SettingsWindow()
 
         ImGui::Indent();
         ImU32 bgcolor = ImColor(ImGui::SysWndBgColor);
-        if (ColorPicker("Background", bgcolor, -1.0f))
+        if (ColorPicker("Background", bgcolor, -FLT_MIN))
             ImGui::SysWndBgColor = ImColor(bgcolor);
-        ColorPicker("Pitch", plot_colors[PlotIdxPitch], -1.0f);
-        ColorPicker("Tempo", plot_colors[PlotIdxTempo], -1.0f);
-        ColorPicker("Metronome", plot_colors[PlotIdxMetronome], -1.0f);
+        ColorPicker("Pitch", plot_colors[PlotIdxPitch], -FLT_MIN);
+        ColorPicker("Tempo", plot_colors[PlotIdxTempo], -FLT_MIN);
+        ColorPicker("Metronome", plot_colors[PlotIdxMetronome], -FLT_MIN);
         ImGui::Unindent();
 
         if (closenode == CloseScale)
             ImGui::SetNextItemOpen(false);
         if (ImGui::TreeNodeEx("Scale##Colors", scale_chroma ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen))
         {
-            ColorPicker("1st Tonic", plot_colors[PlotIdxTonic], -1.0f);
-            ColorPicker("2nd Supertonic", plot_colors[PlotIdxSupertonic], -1.0f);
-            ColorPicker("3rd Mediant", plot_colors[PlotIdxMediant], -1.0f);
-            ColorPicker("4th Subdominant", plot_colors[PlotIdxSubdominant], -1.0f);
-            ColorPicker("5th Dominant", plot_colors[PlotIdxDominant], -1.0f);
-            ColorPicker("6th Subtonic", plot_colors[PlotIdxSubtonic], -1.0f);
-            ColorPicker("7th Leading", plot_colors[PlotIdxLeading], -1.0f);
-            ColorPicker("Semitone", plot_colors[PlotIdxSemitone], -1.0f);
+            ColorPicker("1st Tonic", plot_colors[PlotIdxTonic], -FLT_MIN);
+            ColorPicker("2nd Supertonic", plot_colors[PlotIdxSupertonic], -FLT_MIN);
+            ColorPicker("3rd Mediant", plot_colors[PlotIdxMediant], -FLT_MIN);
+            ColorPicker("4th Subdominant", plot_colors[PlotIdxSubdominant], -FLT_MIN);
+            ColorPicker("5th Dominant", plot_colors[PlotIdxDominant], -FLT_MIN);
+            ColorPicker("6th Subtonic", plot_colors[PlotIdxSubtonic], -FLT_MIN);
+            ColorPicker("7th Leading", plot_colors[PlotIdxLeading], -FLT_MIN);
+            ColorPicker("Semitone", plot_colors[PlotIdxSemitone], -FLT_MIN);
 
             closenode = CloseChromatic;
             ImGui::TreePop();
@@ -2843,18 +2832,18 @@ static void SettingsWindow()
             ImGui::SetNextItemOpen(false);
         if (ImGui::TreeNodeEx("Chromatic##Colors", scale_chroma ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None))
         {
-            ColorPicker("C", plot_colors[PlotIdxChromaC], -1.0f);
-            ColorPicker("C♯/D♭", plot_colors[PlotIdxChromaCsBb], -1.0f);
-            ColorPicker("D", plot_colors[PlotIdxChromaD], -1.0f);
-            ColorPicker("D♯/E♭", plot_colors[PlotIdxChromaDsEb], -1.0f);
-            ColorPicker("E", plot_colors[PlotIdxChromaE], -1.0f);
-            ColorPicker("F", plot_colors[PlotIdxChromaF], -1.0f);
-            ColorPicker("F♯/G♭", plot_colors[PlotIdxChromaFsGb], -1.0f);
-            ColorPicker("G", plot_colors[PlotIdxChromaG], -1.0f);
-            ColorPicker("G♯/A♭", plot_colors[PlotIdxChromaGsAb], -1.0f);
-            ColorPicker("A", plot_colors[PlotIdxChromaA], -1.0f);
-            ColorPicker("A♯/B♭", plot_colors[PlotIdxChromaAsBb], -1.0f);
-            ColorPicker("B", plot_colors[PlotIdxChromaB], -1.0f);
+            ColorPicker("C", plot_colors[PlotIdxChromaC], -FLT_MIN);
+            ColorPicker("C♯/D♭", plot_colors[PlotIdxChromaCsBb], -FLT_MIN);
+            ColorPicker("D", plot_colors[PlotIdxChromaD], -FLT_MIN);
+            ColorPicker("D♯/E♭", plot_colors[PlotIdxChromaDsEb], -FLT_MIN);
+            ColorPicker("E", plot_colors[PlotIdxChromaE], -FLT_MIN);
+            ColorPicker("F", plot_colors[PlotIdxChromaF], -FLT_MIN);
+            ColorPicker("F♯/G♭", plot_colors[PlotIdxChromaFsGb], -FLT_MIN);
+            ColorPicker("G", plot_colors[PlotIdxChromaG], -FLT_MIN);
+            ColorPicker("G♯/A♭", plot_colors[PlotIdxChromaGsAb], -FLT_MIN);
+            ColorPicker("A", plot_colors[PlotIdxChromaA], -FLT_MIN);
+            ColorPicker("A♯/B♭", plot_colors[PlotIdxChromaAsBb], -FLT_MIN);
+            ColorPicker("B", plot_colors[PlotIdxChromaB], -FLT_MIN);
 
             closenode = CloseScale;
             ImGui::TreePop();
@@ -2874,6 +2863,8 @@ static void SettingsWindow()
 #define LINK(url, text, descr) do { ImGui::TextLinkOpenURL(text, url); ImGui::SameLine(); ImGui::TextUnformatted(descr); } while(0)
 void ImGui::ShowAboutWindow(bool* p_open)
 {
+    (void)p_open;
+
     if (!HandlePopupState("About imVocalPitchMonitor", wnd_about, ImGui::GetMainViewport()->GetCenter(), ImVec2(0.5f, 0.5f)))
         return;
 

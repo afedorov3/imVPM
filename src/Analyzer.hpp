@@ -65,7 +65,7 @@ public:
         wave_data_pos(0)
     {
         for(size_t i = 0; i < FFTSIZE; ++i)
-            han_window[i] = (0.5 - std::cos(i * M_PI * 2 / FFTSIZE) * 0.5) / sample_fsval;
+            han_window[i] = (0.5 - std::cos((double)i * M_PI * 2 / FFTSIZE) * 0.5) / sample_fsval;
 
         for(size_t i = 0; i < PITCH_BUF_SIZE; ++i)
             pitch_buf[i] = -1.0f;

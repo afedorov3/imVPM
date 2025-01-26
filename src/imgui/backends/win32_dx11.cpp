@@ -65,7 +65,7 @@ static std::unique_ptr<char[]> argv_wchar_to_utf8(int argc, wchar_t const *const
 template <typename P>
 bool Symbol (HMODULE h, P & pointer, const char * name) 
 {
-    if (P p = reinterpret_cast <P> (GetProcAddress (h, name)))
+    if (P p = reinterpret_cast <P> ( reinterpret_cast <void *> (GetProcAddress (h, name))))
     {
         pointer = p;
         return true;
@@ -332,7 +332,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam;
         RECT wr = { };
-        DWORD ret = AdjustWindowRectEx(&wr, WS_OVERLAPPEDWINDOW, FALSE, 0);
+        AdjustWindowRectEx(&wr, WS_OVERLAPPEDWINDOW, FALSE, 0);
         wr.right -= wr.left;
         wr.bottom -= wr.top;
         if (ImGui::SysWndMinMax.x)
@@ -397,9 +397,9 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 if (len > 0)
                 {
                     std::unique_ptr<wchar_t[]> wfile(new wchar_t[len + 1]);
-                    UINT ret = DragQueryFileW(hDrop, i, wfile.get(), len + 1);
+                    DragQueryFileW(hDrop, i, wfile.get(), len + 1);
                     auto file = wchar_to_utf8(wfile.get());
-                    if (g_DropCb) g_DropCb(file.get());
+                    if (g_DropCb && file) g_DropCb(file.get());
                 }
             }
         }

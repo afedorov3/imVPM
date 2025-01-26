@@ -219,8 +219,8 @@ public:
         State &operator&=(unsigned int reset)   { value &= reset; return *this; }
 
         // access
-        constexpr const unsigned int operator()() const { return value; }
-        constexpr operator StateBits() const { return (const StateBits)value; }
+        unsigned int operator()() const { return value; }
+        operator StateBits() const { return (StateBits)value; }
 
         unsigned int value;
         bool hasPlaybackFile;

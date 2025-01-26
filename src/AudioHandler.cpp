@@ -146,6 +146,8 @@ static ma_result encoder_init_file(const char* pFilePath, const ma_encoder_confi
 
 static void ah_log_callback(void* pUserData, ma_uint32 level, const char* pMessage)
 {
+    (void)level;
+
     Logger *pLog = reinterpret_cast<Logger*>(pUserData);
     if (!pLog)
         return;
@@ -157,6 +159,8 @@ static void ah_log_callback(void* pUserData, ma_uint32 level, const char* pMessa
 static ma_bool32 ah_device_enum_callback(ma_context* pContext, ma_device_type deviceType,
                                          const ma_device_info* pInfo, void* pUserData)
 {
+    (void)pContext;
+
     AudioHandler::privateContext *ppc = reinterpret_cast<AudioHandler::privateContext*>(pUserData);
     if (!ppc)
         return MA_FALSE;
@@ -801,7 +805,7 @@ void AudioHandler::commandProc()
                 {
                     std::lock_guard<std::mutex> lock(pc.device_mutex);
                     if (!devices->preferred.empty()) {
-                        for (int i = 0; i < devices->list.size(); ++i) {
+                        for (size_t i = 0; i < devices->list.size(); ++i) {
                             if (match(devices->list[i].name, devices->preferred)) {
                                 devices->selectedId = devices->list[i].id;
                                 devices->selectedName = devices->list[i].name;

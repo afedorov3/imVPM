@@ -154,7 +154,6 @@ int main(int argc, char* argv[])
  
     ImRect pMinMax = {};
     // Main loop
-    bool done = false;
 #ifdef __EMSCRIPTEN__
     // For an Emscripten build we are disabling file-system access, so let's not attempt to do a fopen() of the imgui.ini file.
     // You may manually call LoadIniSettingsFromMemory() to load settings from your own storage.
