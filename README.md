@@ -116,4 +116,4 @@ if configure succedes, to start the build run:
 cmake --build build
 cmake --install build --strip
 ```
-cmake --install will put the resulting executable into the bin directory and create the release archive
+cmake --install will put the resulting executable into the bin directory

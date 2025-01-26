@@ -369,4 +369,6 @@ endif()
 ###
 ### produce release archive
 ###
-install(CODE "include(${CMAKE_SOURCE_DIR}/assets/archive.cmake)\narchive_target(${CMAKE_SOURCE_DIR}/bin imvpm${CMAKE_EXECUTABLE_SUFFIX} \"${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}\" \"${IMVPM_BACKEND}-${IMVPM_GRAPHICS}\")")
+if(ARCHIVE)
+  install(CODE "include(${CMAKE_SOURCE_DIR}/assets/archive.cmake)\narchive_target(${CMAKE_SOURCE_DIR}/bin imvpm${CMAKE_EXECUTABLE_SUFFIX} \"${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}\" \"${IMVPM_BACKEND}-${IMVPM_GRAPHICS}\")")
+endif()

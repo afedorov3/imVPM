@@ -630,28 +630,35 @@ static inline bool ends_with(std::string const & value, std::string const & endi
     return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
 
-static std::string TruncateUTF8String(const std::string &str, size_t max_size)
+static std::string TruncateUTF8String(const std::string &str, size_t max_len)
 {
-    if (str.size() < max_size)
-        return std::string(str);
-    if (max_size <= 1)
+    if (str.size() < max_len)
+        return str;
+    if (max_len <= 1)
         return "";
 
     size_t pos, last_pos = 0;
-    for (pos = 0; pos < str.size(); ++pos)
+    for (pos = 0; pos < str.size() && max_len; max_len--)
     {
         unsigned char byte = static_cast<unsigned char>(str[pos]);
-        if ((byte & 0xC0) != 0x80)
-        {
-            if (!max_size)
-                break;
-            max_size--;
-            last_pos = pos;
-        }
+        size_t cnt = 0;
+        if (byte < 0x80)
+            cnt = 1;
+        else if ((byte >> 5) == 0x6)
+            cnt = 2;
+        else if ((byte >> 4) == 0xe)
+            cnt = 3;
+        else if ((byte >> 3) == 0x1e)
+            cnt = 4;
+        else // invalid sequence
+            break;
+
+        last_pos = pos;
+        pos += cnt;
     }
 
-    if (pos == str.size())
-        return std::string(str);
+    if (pos >= str.size())
+        return str;
 
     return str.substr(0, last_pos) + "…";
 }
