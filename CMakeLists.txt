@@ -294,6 +294,7 @@ endif()
 ### imVocalPitchMonitor
 ###
 add_executable(imvpm src/imvpm.cpp src/AudioHandler.cpp ${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp ${MINIAUDIO_SRC}/extras/stb_vorbis.c src/imgui/backends/${IMVPM_BACKEND}_${IMVPM_GRAPHICS}.cpp ${FFT4G_SRC}/C++/fft4g.cpp ${IMGUI_SRC}/backends/imgui_impl_${IMVPM_GRAPHICS}.cpp ${IMGUI_SRC}/backends/imgui_impl_${IMVPM_BACKEND}.cpp ${IMGUI_SRC}/imgui.cpp ${IMGUI_SRC}/imgui_widgets.cpp ${IMGUI_SRC}/imgui_tables.cpp ${IMGUI_SRC}/imgui_draw.cpp)
+target_compile_options(imvpm PRIVATE -Wall)
 target_include_directories(imvpm PRIVATE src/imgui ${FFT4G_SRC}/C++ ${MINIAUDIO_SRC} ${IMGUI_SRC} ${IMGUI_SRC}/backends ${FONTS_SRC} ${PFD_SRC} ${SIMPLEINI_SRC} ${POPL_SRC}/include)
 target_compile_definitions(imvpm PRIVATE VER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR} VER_VERSION_MINOR=${PROJECT_VERSION_MINOR} VER_VERSION_PATCH=${PROJECT_VERSION_PATCH})
 if(OPUS_SUPPORT)

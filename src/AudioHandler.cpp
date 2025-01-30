@@ -22,15 +22,15 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "AudioHandler.h"
 
+#define _UNUSED_ [[maybe_unused]]
+
 using namespace logger;
 
 #if defined(HAVE_OPUS)
-static ma_result ma_decoding_backend_init__libopus(void* pUserData, ma_read_proc onRead, ma_seek_proc onSeek, ma_tell_proc onTell, void* pReadSeekTellUserData, const ma_decoding_backend_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_data_source** ppBackend)
+static ma_result ma_decoding_backend_init__libopus(_UNUSED_ void* pUserData, ma_read_proc onRead, ma_seek_proc onSeek, ma_tell_proc onTell, void* pReadSeekTellUserData, const ma_decoding_backend_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_data_source** ppBackend)
 {
     ma_result result;
     ma_libopus* pOpus;
-
-    (void)pUserData;
 
     pOpus = (ma_libopus*)ma_malloc(sizeof(*pOpus), pAllocationCallbacks);
     if (pOpus == NULL) {
@@ -48,12 +48,10 @@ static ma_result ma_decoding_backend_init__libopus(void* pUserData, ma_read_proc
     return MA_SUCCESS;
 }
 
-static ma_result ma_decoding_backend_init_file__libopus(void* pUserData, const char* pFilePath, const ma_decoding_backend_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_data_source** ppBackend)
+static ma_result ma_decoding_backend_init_file__libopus(_UNUSED_ void* pUserData, const char* pFilePath, const ma_decoding_backend_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_data_source** ppBackend)
 {
     ma_result result;
     ma_libopus* pOpus;
-
-    (void)pUserData;
 
     pOpus = (ma_libopus*)ma_malloc(sizeof(*pOpus), pAllocationCallbacks);
     if (pOpus == NULL) {
@@ -71,21 +69,18 @@ static ma_result ma_decoding_backend_init_file__libopus(void* pUserData, const c
     return MA_SUCCESS;
 }
 
-static void ma_decoding_backend_uninit__libopus(void* pUserData, ma_data_source* pBackend, const ma_allocation_callbacks* pAllocationCallbacks)
+static void ma_decoding_backend_uninit__libopus(_UNUSED_ void* pUserData, ma_data_source* pBackend, const ma_allocation_callbacks* pAllocationCallbacks)
 {
     ma_libopus* pOpus = (ma_libopus*)pBackend;
-
-    (void)pUserData;
 
     ma_libopus_uninit(pOpus, pAllocationCallbacks);
     ma_free(pOpus, pAllocationCallbacks);
 }
 
-static ma_result ma_decoding_backend_get_channel_map__libopus(void* pUserData, ma_data_source* pBackend, ma_channel* pChannelMap, size_t channelMapCap)
+_UNUSED_
+static ma_result ma_decoding_backend_get_channel_map__libopus(_UNUSED_ void* pUserData, ma_data_source* pBackend, ma_channel* pChannelMap, size_t channelMapCap)
 {
     ma_libopus* pOpus = (ma_libopus*)pBackend;
-
-    (void)pUserData;
 
     return ma_libopus_get_data_format(pOpus, NULL, NULL, NULL, pChannelMap, channelMapCap);
 }
@@ -144,10 +139,8 @@ static ma_result encoder_init_file(const char* pFilePath, const ma_encoder_confi
 #define encoder_init_file ma_encoder_init_file
 #endif // !defined(MA_WIN32)
 
-static void ah_log_callback(void* pUserData, ma_uint32 level, const char* pMessage)
+static void ah_log_callback(void* pUserData, _UNUSED_ ma_uint32 level, const char* pMessage)
 {
-    (void)level;
-
     Logger *pLog = reinterpret_cast<Logger*>(pUserData);
     if (!pLog)
         return;
@@ -156,11 +149,9 @@ static void ah_log_callback(void* pUserData, ma_uint32 level, const char* pMessa
     pLog->LogMsg(LOG_DBG, "%s", pMessage);
 }
 
-static ma_bool32 ah_device_enum_callback(ma_context* pContext, ma_device_type deviceType,
+static ma_bool32 ah_device_enum_callback(_UNUSED_ ma_context* pContext, ma_device_type deviceType,
                                          const ma_device_info* pInfo, void* pUserData)
 {
-    (void)pContext;
-
     AudioHandler::privateContext *ppc = reinterpret_cast<AudioHandler::privateContext*>(pUserData);
     if (!ppc)
         return MA_FALSE;
@@ -199,7 +190,7 @@ static void ah_device_callback(const ma_device_notification* pNotification)
     }
 }
 
-static void ah_play_callback(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount)
+static void ah_play_callback(ma_device *pDevice, void *pOutput, _UNUSED_ const void *pInput, ma_uint32 frameCount)
 {
     AudioHandler::privateContext *ppc = reinterpret_cast<AudioHandler::privateContext*>(pDevice->pUserData);
     if (!ppc)
@@ -227,11 +218,9 @@ static void ah_play_callback(ma_device *pDevice, void *pOutput, const void *pInp
         if (ppc->frameDataCbProc)
             ppc->frameDataCbProc((AudioHandler::Format)pDevice->playback.format, pDevice->playback.channels, pOutput, (uint32_t)framesRead, ppc->frameDataCbUserData);
     }
-
-    (void)pInput;
 }
 
-static void ah_capture_callback(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount)
+static void ah_capture_callback(ma_device *pDevice, _UNUSED_ void *pOutput, const void *pInput, ma_uint32 frameCount)
 {
     AudioHandler::privateContext *ppc = reinterpret_cast<AudioHandler::privateContext*>(pDevice->pUserData);
     if (!ppc)
@@ -265,7 +254,6 @@ static void ah_capture_callback(ma_device *pDevice, void *pOutput, const void *p
             }
         }
     }
-    (void)pOutput;
 }
 
 AudioHandler::privateContext::privateContext(Logger *logptr) :

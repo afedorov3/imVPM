@@ -97,6 +97,8 @@ Index of this file:
 #define IMGUI_APP
 #include "imgui_local.h"
 
+#define _UNUSED_ [[maybe_unused]]
+
 using namespace logger;
 
 // Visual Studio warnings
@@ -641,7 +643,7 @@ static std::string TruncateUTF8String(const std::string &str, size_t max_len)
     for (pos = 0; pos < str.size() && max_len; max_len--)
     {
         unsigned char byte = static_cast<unsigned char>(str[pos]);
-        size_t cnt = 0;
+        size_t cnt;
         if (byte < 0x80)
             cnt = 1;
         else if ((byte >> 5) == 0x6)
@@ -1275,11 +1277,8 @@ static inline bool ShowWindow(WndState &state)
 //-----------------------------------------------------------------------------
 
 // AudioHandler
-void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData, uint32_t frameCount, void *userData)
+void sampleCb(_UNUSED_ AudioHandler::Format format, uint32_t channels, const void *pData, uint32_t frameCount, _UNUSED_ void *userData)
 {
-    (void)format;
-    (void)userData;
-
     std::lock_guard<std::mutex> lock(analyzer_mtx);
     if (hold)
     {
@@ -1303,10 +1302,8 @@ void sampleCb(AudioHandler::Format format, uint32_t channels, const void *pData,
     }
 }
 
-void eventCb(const AudioHandler::Notification &notification, void *userData)
+void eventCb(const AudioHandler::Notification &notification, _UNUSED_ void *userData)
 {
-    (void)userData;
-
     std::stringstream title;
     size_t sep;
 
@@ -2868,10 +2865,8 @@ static void SettingsWindow()
 //-----------------------------------------------------------------------------
 
 #define LINK(url, text, descr) do { ImGui::TextLinkOpenURL(text, url); ImGui::SameLine(); ImGui::TextUnformatted(descr); } while(0)
-void ImGui::ShowAboutWindow(bool* p_open)
+void ImGui::ShowAboutWindow(_UNUSED_ bool* p_open)
 {
-    (void)p_open;
-
     if (!HandlePopupState("About imVocalPitchMonitor", wnd_about, ImGui::GetMainViewport()->GetCenter(), ImVec2(0.5f, 0.5f)))
         return;
 
