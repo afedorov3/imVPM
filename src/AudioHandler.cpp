@@ -5,10 +5,6 @@
 #include <locale>
 #include <algorithm>
 
-/* Known issues:
-   Ogg length is always reported as 0 on windows due to ma_decoder_init_file_w redirection
-*/
-
 #define STB_VORBIS_HEADER_ONLY
 #include "extras/stb_vorbis.c"
 
@@ -108,8 +104,89 @@ static bool match(const std::string& a, const std::string& b, const std::locale&
     return it != a.end();
 }
 
-// wide char wrappers for Windows
+// wide char functions / wrappers for Windows intl compatibility
 #if defined(MA_WIN32)
+// stbvorbis wide char open file port
+stb_vorbis * stb_vorbis_open_filename_w(const wchar_t *filename, int *error, const stb_vorbis_alloc *alloc)
+{
+   FILE *f;
+#if defined(__STDC_WANT_SECURE_LIB__)
+   if (0 != _wfopen_s(&f, filename, L"rb"))
+      f = NULL;
+#else
+   f = _wfopen(filename, L"rb");
+#endif
+   if (f)
+      return stb_vorbis_open_file(f, TRUE, error, alloc);
+   if (error) *error = VORBIS_file_open_failure;
+   return NULL;
+}
+
+MA_API ma_result ma_stbvorbis_init_file_w(const wchar_t* pFilePath, const ma_decoding_backend_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_stbvorbis* pVorbis)
+{
+    ma_result result;
+
+    result = ma_stbvorbis_init_internal(pConfig, pVorbis);
+    if (result != MA_SUCCESS) {
+        return result;
+    }
+
+    #if !defined(MA_NO_VORBIS)
+    {
+        (void)pAllocationCallbacks; /* Don't know how to make use of this with stb_vorbis. */
+
+        /* We can use stb_vorbis' pull mode for file based streams. */
+        pVorbis->stb = stb_vorbis_open_filename_w(pFilePath, NULL, NULL);
+        if (pVorbis->stb == NULL) {
+            return MA_INVALID_FILE;
+        }
+
+        pVorbis->usingPushMode = MA_FALSE;
+
+        result = ma_stbvorbis_post_init(pVorbis);
+        if (result != MA_SUCCESS) {
+            stb_vorbis_close(pVorbis->stb);
+            return result;
+        }
+
+        return MA_SUCCESS;
+    }
+    #else
+    {
+        /* vorbis is disabled. */
+        (void)pFilePath;
+        (void)pAllocationCallbacks;
+        return MA_NOT_IMPLEMENTED;
+    }
+    #endif
+}
+
+static std::once_flag stbvorbis_vtable_patched;
+static ma_result ma_decoding_backend_init_file_w__stbvorbis(void* pUserData, const wchar_t* pFilePath, const ma_decoding_backend_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_data_source** ppBackend)
+{
+    ma_result result;
+    ma_stbvorbis* pVorbis;
+
+    (void)pUserData;    /* For now not using pUserData, but once we start storing the vorbis decoder state within the ma_decoder structure this will be set to the decoder so we can avoid a malloc. */
+
+    /* For now we're just allocating the decoder backend on the heap. */
+    pVorbis = (ma_stbvorbis*)ma_malloc(sizeof(*pVorbis), pAllocationCallbacks);
+    if (pVorbis == NULL) {
+        return MA_OUT_OF_MEMORY;
+    }
+
+    result = ma_stbvorbis_init_file_w(pFilePath, pConfig, pAllocationCallbacks, pVorbis);
+    if (result != MA_SUCCESS) {
+        ma_free(pVorbis, pAllocationCallbacks);
+        return result;
+    }
+
+    *ppBackend = pVorbis;
+
+    return MA_SUCCESS;
+}
+// end of stbvorbis wide char open file impl
+
 static ma_result decoder_init_file(const char* pFilePath, const ma_decoder_config* pConfig, ma_decoder* pDecoder)
 {
     int bufsz = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, pFilePath, -1, nullptr, 0);
@@ -119,6 +196,9 @@ static ma_result decoder_init_file(const char* pFilePath, const ma_decoder_confi
     if (buf == nullptr)
         return MA_OUT_OF_MEMORY;
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, pFilePath, -1, buf.get(), bufsz);
+
+    // patch stbvorbis vtable
+    std::call_once ( stbvorbis_vtable_patched, [ ]{ g_ma_decoding_backend_vtable_stbvorbis.onInitFileW = ma_decoding_backend_init_file_w__stbvorbis; } );
 
     return ma_decoder_init_file_w(buf.get(), pConfig, pDecoder);
 }

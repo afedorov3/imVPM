@@ -100,7 +100,7 @@ int main(int argc, char* argv[])
         case ImGui::WSMaximized: window_flags = (SDL_WindowFlags)(window_flags | SDL_WINDOW_MAXIMIZED); break;
         default: break;
     }
-    g_Window = SDL_CreateWindow("Dear ImGui SDL2+OpenGL3 main window", ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h, window_flags);
+    g_Window = SDL_CreateWindow("Dear ImGui SDL2+OpenGL3 system window", ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h, window_flags);
     if (g_Window == nullptr)
     {
         printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());

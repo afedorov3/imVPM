@@ -2634,7 +2634,14 @@ static void SettingsWindow()
     double time = ImGui::GetTime();
     if (time >= timeout)
         timeout = 0.0;
-    if (ImGui::Button(timeout > 0.0 ? "confirm" : "defaults", btn_sz))
+    bool confirm = timeout > 0.0;
+    if (confirm)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button,        IM_COL32(200,   0,  40, 200));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255,  40,  40, 255));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive , IM_COL32(220,   0,   0, 255));
+    }
+    if (ImGui::Button(confirm ? "confirm" : "defaults", btn_sz))
     {
         if (time < timeout)
         {
@@ -2644,6 +2651,8 @@ static void SettingsWindow()
         else
             timeout = time + 3.0;
     }
+    if (confirm)
+        ImGui::PopStyleColor(3);
 
     if (ro_config)
     {
