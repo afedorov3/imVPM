@@ -53,8 +53,8 @@ Command line:
 imvpm [options] [file]
 options:
   -i, --capture <device>  set preferred capture device
-                          partial, case insensitive (but only for Latin symbols)
-                          match is supported
+                          partial, case insensitive (but only for basic Latin characters)
+                          match, wildcard/regex is not supported
   -o, --playback <device> set preferred playback device
   -r, --record            start recording [it'll overwrite an existing file without asking]
   -v, --verbose           enable debug log

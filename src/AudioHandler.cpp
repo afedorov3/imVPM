@@ -96,18 +96,10 @@ static ma_decoding_backend_vtable* pCustomBackendVTables[] =
 };
 #endif // defined(HAVE_OPUS)
 
-static bool match(const std::string& a, const std::string& b, const std::locale& loc = std::locale())
-{
-    auto it = std::search( a.begin(), a.end(), b.begin(), b.end(),
-        [loc] (const char &cha, const char &chb) -> bool
-        { return std::toupper(cha, loc) == std::toupper(chb, loc); });
-    return it != a.end();
-}
-
 // wide char functions / wrappers for Windows intl compatibility
 #if defined(MA_WIN32)
-// stbvorbis wide char open file port
-stb_vorbis * stb_vorbis_open_filename_w(const wchar_t *filename, int *error, const stb_vorbis_alloc *alloc)
+// stbvorbis wide char open file impl
+static stb_vorbis * stb_vorbis_open_filename_w(const wchar_t *filename, int *error, const stb_vorbis_alloc *alloc)
 {
    FILE *f;
 #if defined(__STDC_WANT_SECURE_LIB__)
@@ -122,7 +114,7 @@ stb_vorbis * stb_vorbis_open_filename_w(const wchar_t *filename, int *error, con
    return NULL;
 }
 
-MA_API ma_result ma_stbvorbis_init_file_w(const wchar_t* pFilePath, const ma_decoding_backend_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_stbvorbis* pVorbis)
+static ma_result ma_stbvorbis_init_file_w(const wchar_t* pFilePath, const ma_decoding_backend_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_stbvorbis* pVorbis)
 {
     ma_result result;
 
@@ -161,7 +153,6 @@ MA_API ma_result ma_stbvorbis_init_file_w(const wchar_t* pFilePath, const ma_dec
     #endif
 }
 
-static std::once_flag stbvorbis_vtable_patched;
 static ma_result ma_decoding_backend_init_file_w__stbvorbis(void* pUserData, const wchar_t* pFilePath, const ma_decoding_backend_config* pConfig, const ma_allocation_callbacks* pAllocationCallbacks, ma_data_source** ppBackend)
 {
     ma_result result;
@@ -187,6 +178,7 @@ static ma_result ma_decoding_backend_init_file_w__stbvorbis(void* pUserData, con
 }
 // end of stbvorbis wide char open file impl
 
+static std::once_flag stbvorbis_vtable_patched;
 static ma_result decoder_init_file(const char* pFilePath, const ma_decoder_config* pConfig, ma_decoder* pDecoder)
 {
     int bufsz = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, pFilePath, -1, nullptr, 0);
@@ -218,6 +210,14 @@ static ma_result encoder_init_file(const char* pFilePath, const ma_encoder_confi
 #define decoder_init_file ma_decoder_init_file
 #define encoder_init_file ma_encoder_init_file
 #endif // !defined(MA_WIN32)
+
+static bool match(const std::string& a, const std::string& b, const std::locale& loc = std::locale())
+{
+    auto it = std::search( a.begin(), a.end(), b.begin(), b.end(),
+        [loc] (const char &cha, const char &chb) -> bool
+        { return std::toupper(cha, loc) == std::toupper(chb, loc); } );
+    return it != a.end();
+}
 
 static void ah_log_callback(void* pUserData, _UNUSED_ ma_uint32 level, const char* pMessage)
 {
