@@ -372,11 +372,11 @@ int main(int argc, char* argv[])
 #endif
 
     // Create window with Vulkan graphics context
-    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    Uint32 window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_HIDDEN;
     switch (ImGui::SysWndState)
     {
-        case ImGui::WSMinimized: window_flags = (SDL_WindowFlags)(window_flags | SDL_WINDOW_MINIMIZED); break;
-        case ImGui::WSMaximized: window_flags = (SDL_WindowFlags)(window_flags | SDL_WINDOW_MAXIMIZED); break;
+        case ImGui::WSMinimized: window_flags |= SDL_WINDOW_MINIMIZED; break;
+        case ImGui::WSMaximized: window_flags |= SDL_WINDOW_MAXIMIZED; break;
         default: break;
     }
     g_Window = SDL_CreateWindow("Dear ImGui SDL2+Vulkan system window", ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h, window_flags);
@@ -407,6 +407,7 @@ int main(int argc, char* argv[])
     SDL_GetWindowSize(g_Window, &w, &h);
     ImGui_ImplVulkanH_Window* wd = &g_MainWindowData;
     SetupVulkanWindow(wd, surface, w, h);
+    SDL_ShowWindow(g_Window);
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -472,6 +473,12 @@ int main(int argc, char* argv[])
             ImGui_ImplSDL2_ProcessEvent(&event);
             if (event.type == SDL_QUIT)
                 ImGui::AppExit = true;
+            else if (event.type == SDL_DROPFILE)
+            {
+                if (g_DropCb)
+                    g_DropCb(event.drop.file);
+                SDL_free(event.drop.file);
+            }
             else if (event.type == SDL_WINDOWEVENT && event.window.windowID == SDL_GetWindowID(g_Window))
             {
                 switch (event.window.event)
@@ -481,9 +488,9 @@ int main(int argc, char* argv[])
                         break;
                     case SDL_WINDOWEVENT_RESIZED:
                         if ((SDL_GetWindowFlags(g_Window) & (SDL_WINDOW_FULLSCREEN
-                                                          | SDL_WINDOW_MINIMIZED
-                                                          | SDL_WINDOW_MAXIMIZED
-                                                          | SDL_WINDOW_FULLSCREEN_DESKTOP)) == 0)
+                                                           | SDL_WINDOW_MINIMIZED
+                                                           | SDL_WINDOW_MAXIMIZED
+                                                           | SDL_WINDOW_FULLSCREEN_DESKTOP)) == 0)
                         {
                             ImGui::SysWndPos.w = event.window.data1;
                             ImGui::SysWndPos.h = event.window.data2;
@@ -491,12 +498,16 @@ int main(int argc, char* argv[])
                         break;
                     case SDL_WINDOWEVENT_MOVED:
                         if ((SDL_GetWindowFlags(g_Window) & (SDL_WINDOW_FULLSCREEN
-                                                          | SDL_WINDOW_MINIMIZED
-                                                          | SDL_WINDOW_MAXIMIZED
-                                                          | SDL_WINDOW_FULLSCREEN_DESKTOP)) == 0)
+                                                           | SDL_WINDOW_MINIMIZED
+                                                           | SDL_WINDOW_MAXIMIZED
+                                                           | SDL_WINDOW_FULLSCREEN_DESKTOP)) == 0)
                         {
-                            ImGui::SysWndPos.x = event.window.data1;
-                            ImGui::SysWndPos.y = event.window.data2;
+                            int top, left;
+                            if (SDL_GetWindowBordersSize(g_Window, &top, &left, NULL, NULL) == 0)
+                            {
+                                ImGui::SysWndPos.x = event.window.data1 - left;
+                                ImGui::SysWndPos.y = event.window.data2 - top;
+                            }
                         }
                         break;
                     case SDL_WINDOWEVENT_MINIMIZED:
@@ -515,12 +526,6 @@ int main(int argc, char* argv[])
                         ImGui::SysWndFocus = false;
                         break;
                 }
-            }
-            else if (event.type == SDL_DROPFILE)
-            {
-                if (g_DropCb)
-                    g_DropCb(event.drop.file);
-                SDL_free(event.drop.file);
             }
         }
         if (SDL_GetWindowFlags(g_Window) & SDL_WINDOW_MINIMIZED)

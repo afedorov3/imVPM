@@ -109,6 +109,9 @@ int wmain(int argc, wchar_t** wargv)
     if (g_Window == nullptr)
         return -1;
 
+    // support transparent system window
+    ImGui_ImplWin32_EnableAlphaCompositing(g_Window);
+
     // Initialize Direct3D
     if (!CreateDeviceD3D(g_Window))
     {
@@ -365,6 +368,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (!(wp->flags & SWP_NOMOVE) || !(wp->flags & SWP_NOSIZE))
         {
             WINDOWPLACEMENT wpl;
+            wpl.length = sizeof(WINDOWPLACEMENT);
             GetWindowPlacement(hWnd, &wpl);
             ImGui::SysWndPos.x = wpl.rcNormalPosition.left;
             ImGui::SysWndPos.y = wpl.rcNormalPosition.top;

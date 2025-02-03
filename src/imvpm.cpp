@@ -539,7 +539,7 @@ static void TempoControl();               // tempo control widget
 static void ScaleSelector(bool from_settings = false); // scale selection widget
 static void HoldButton();                 // HOLD button
 static void PlaybackProgress();           // playback progress bar
-static bool ColorPicker(const char *label, ImU32 &color, float split = 0.0f); // color picker with palette
+static bool ColorPicker(const char *label, ImU32 &color, float split = 0.0f, bool alpha = false); // color picker with palette
 
 // main window routines
 static void InputControl();               // handle controls
@@ -2034,18 +2034,19 @@ static void PlaybackProgress()
     }
 }
 
-static bool ColorPicker(const char *label, ImU32 &color, float split)
+static bool ColorPicker(const char *label, ImU32 &color, float split, bool alpha)
 {
     float button_width(100.0f * ui_scale);
     static ImColor backup_color;
     bool ret = false;
+    ImGuiColorEditFlags flags = alpha ? (ImGuiColorEditFlags)0 : ImGuiColorEditFlags_NoAlpha;
     ImColor col(color);
 
     ImGui::PushID(label);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
     ImGui::SameLine(split >= 0.0f ? split : ImGui::GetContentRegionAvail().x + ImGui::GetCursorPos().x - button_width);
-    if (ImGui::ColorButton("##ColorButton", col, ImGuiColorEditFlags_NoAlpha, ImVec2(button_width, ImGui::GetFrameHeight())))
+    if (ImGui::ColorButton("##ColorButton", col, flags, ImVec2(button_width, ImGui::GetFrameHeight())))
     {
         ImGui::OpenPopup("##PaletePicker");
         backup_color = color;
@@ -2061,7 +2062,7 @@ static bool ColorPicker(const char *label, ImU32 &color, float split)
 
         ImGui::Text("Pick a color");
         ImGui::Separator();
-        if (ImGui::ColorPicker4("##ColorPicker", (float*)&col, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoSmallPreview))
+        if (ImGui::ColorPicker4("##ColorPicker", (float*)&col, flags | ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoSmallPreview))
         {
             color = col;
             ret = true;
@@ -2070,9 +2071,9 @@ static bool ColorPicker(const char *label, ImU32 &color, float split)
 
         ImGui::BeginGroup(); // Lock X position
         ImGui::Text("Current");
-        ImGui::ColorButton("##CurrentColor", col, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoPicker, preview_sz);
+        ImGui::ColorButton("##CurrentColor", col, flags | ImGuiColorEditFlags_NoPicker, preview_sz);
         ImGui::Text("Previous");
-        if (ImGui::ColorButton("##PreviousColor", backup_color, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoPicker, preview_sz))
+        if (ImGui::ColorButton("##PreviousColor", backup_color, flags | ImGuiColorEditFlags_NoPicker, preview_sz))
         {
             color = backup_color;
             ret = true;
@@ -2817,7 +2818,7 @@ static void SettingsWindow()
 
         ImGui::Indent();
         ImU32 bgcolor = ImColor(ImGui::SysWndBgColor);
-        if (ColorPicker("Background", bgcolor, -FLT_MIN))
+        if (ColorPicker("Background", bgcolor, -FLT_MIN, true))
             ImGui::SysWndBgColor = ImColor(bgcolor);
         ColorPicker("Pitch", plot_colors[PlotIdxPitch], -FLT_MIN);
         ColorPicker("Tempo", plot_colors[PlotIdxTempo], -FLT_MIN);

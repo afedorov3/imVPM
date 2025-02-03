@@ -1,4 +1,4 @@
-// Dear ImGui: standalone example application for SDL2 + OpenGL
+// Dear ImGui: standalone example application for SDL3 + OpenGL
 // (SDL is a cross-platform general purpose library for handling windows, inputs, OpenGL/Vulkan/Metal graphics context creation, etc.)
 
 // Learn about Dear ImGui:
@@ -8,17 +8,17 @@
 // - Introduction, links and more at the top of imgui.cpp
 
 #include "imgui.h"
-#include "imgui_impl_sdl2.h"
+#include "imgui_impl_sdl3.h"
 #include "imgui_impl_opengl3.h"
 #include <stdio.h>
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #if defined(IMGUI_IMPL_OPENGL_ES2)
-#include <SDL_opengles2.h>
+#include <SDL3/SDL_opengles2.h>
 #else
-#include <SDL_opengl.h>
+#include <SDL3/SDL_opengl.h>
 #endif
 
-// This example can also compile and run with Emscripten! See 'Makefile.emscripten' for details.
+// This example doesn't compile with Emscripten yet! Awaiting SDL3 support.
 #ifdef __EMSCRIPTEN__
 #include "../libs/emscripten/emscripten_mainloop_stub.h"
 #endif
@@ -47,9 +47,9 @@ int main(int argc, char* argv[])
     if (ret != 0) return ret;
 
     // Setup SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0)
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
-        printf("Error: %s\n", SDL_GetError());
+        printf("Error: SDL_Init(): %s\n", SDL_GetError());
         return -1;
     }
 
@@ -84,28 +84,26 @@ int main(int argc, char* argv[])
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 #endif
 
-    // From 2.0.18: Enable native IME.
-#ifdef SDL_HINT_IME_SHOW_UI
-    SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
-#endif
-
     // Create window with graphics context
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    Uint32 window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_HIDDEN;
+
+    Uint32 window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
+                        | SDL_WINDOW_TRANSPARENT | SDL_WINDOW_HIDDEN;
     switch (ImGui::SysWndState)
     {
         case ImGui::WSMinimized: window_flags |= SDL_WINDOW_MINIMIZED; break;
         case ImGui::WSMaximized: window_flags |= SDL_WINDOW_MAXIMIZED; break;
         default: break;
     }
-    g_Window = SDL_CreateWindow("Dear ImGui SDL2+OpenGL3 system window", ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h, window_flags);
+    g_Window = SDL_CreateWindow("Dear ImGui SDL3+OpenGL3 system window", ImGui::SysWndPos.w, ImGui::SysWndPos.h, window_flags);
     if (g_Window == nullptr)
     {
         printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
         return -1;
     }
+    SDL_SetWindowPosition(g_Window, ImGui::SysWndPos.x, ImGui::SysWndPos.y);
 
     SDL_GLContext gl_context = SDL_GL_CreateContext(g_Window);
     if (gl_context == nullptr)
@@ -130,7 +128,7 @@ int main(int argc, char* argv[])
     //ImGui::StyleColorsLight();
 
     // Setup Platform/Renderer backends
-    ImGui_ImplSDL2_InitForOpenGL(g_Window, gl_context);
+    ImGui_ImplSDL3_InitForOpenGL(g_Window, gl_context);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
     // Load Fonts
@@ -172,59 +170,56 @@ int main(int argc, char* argv[])
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
-            ImGui_ImplSDL2_ProcessEvent(&event);
-            if (event.type == SDL_QUIT)
+            ImGui_ImplSDL3_ProcessEvent(&event);
+            if (event.type == SDL_EVENT_QUIT)
                 ImGui::AppExit = true;
-            else if (event.type == SDL_DROPFILE)
+            else if (event.type == SDL_EVENT_DROP_FILE)
             {
                 if (g_DropCb)
-                    g_DropCb(event.drop.file);
-                SDL_free(event.drop.file);
+                    g_DropCb(event.drop.data);
             }
-            else if (event.type == SDL_WINDOWEVENT && event.window.windowID == SDL_GetWindowID(g_Window))
+            else if (event.window.windowID == SDL_GetWindowID(g_Window))
             {
-                switch (event.window.event)
+                switch (event.type)
                 {
-                    case SDL_WINDOWEVENT_CLOSE:
+                    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
                         ImGui::AppExit = true;
                         break;
-                    case SDL_WINDOWEVENT_RESIZED:
+                    case SDL_EVENT_WINDOW_RESIZED:
                         if ((SDL_GetWindowFlags(g_Window) & (SDL_WINDOW_FULLSCREEN
                                                            | SDL_WINDOW_MINIMIZED
-                                                           | SDL_WINDOW_MAXIMIZED
-                                                           | SDL_WINDOW_FULLSCREEN_DESKTOP)) == 0)
+                                                           | SDL_WINDOW_MAXIMIZED)) == 0)
                         {
                             ImGui::SysWndPos.w = event.window.data1;
                             ImGui::SysWndPos.h = event.window.data2;
                         }
                         break;
-                    case SDL_WINDOWEVENT_MOVED:
+                    case SDL_EVENT_WINDOW_MOVED:
                         if ((SDL_GetWindowFlags(g_Window) & (SDL_WINDOW_FULLSCREEN
                                                            | SDL_WINDOW_MINIMIZED
-                                                           | SDL_WINDOW_MAXIMIZED
-                                                           | SDL_WINDOW_FULLSCREEN_DESKTOP)) == 0)
+                                                           | SDL_WINDOW_MAXIMIZED)) == 0)
                         {
                             int top, left;
-                            if (SDL_GetWindowBordersSize(g_Window, &top, &left, NULL, NULL) == 0)
+                            if (SDL_GetWindowBordersSize(g_Window, &top, &left, NULL, NULL))
                             {
                                 ImGui::SysWndPos.x = event.window.data1 - left;
                                 ImGui::SysWndPos.y = event.window.data2 - top;
                             }
                         }
                         break;
-                    case SDL_WINDOWEVENT_MINIMIZED:
+                    case SDL_EVENT_WINDOW_MINIMIZED:
                         ImGui::SysWndState = ImGui::WSMinimized;
                         break;
-                    case SDL_WINDOWEVENT_MAXIMIZED:
+                    case SDL_EVENT_WINDOW_MAXIMIZED:
                         ImGui::SysWndState = ImGui::WSMaximized;
                         break;
-                    case SDL_WINDOWEVENT_RESTORED:
+                    case SDL_EVENT_WINDOW_RESTORED:
                         ImGui::SysWndState = ImGui::WSNormal;
                         break;
-                    case SDL_WINDOWEVENT_FOCUS_GAINED:
+                    case SDL_EVENT_WINDOW_FOCUS_GAINED:
                         ImGui::SysWndFocus = true;
                         break;
-                    case SDL_WINDOWEVENT_FOCUS_LOST:
+                    case SDL_EVENT_WINDOW_FOCUS_LOST:
                         ImGui::SysWndFocus = false;
                         break;
                 }
@@ -256,7 +251,7 @@ int main(int argc, char* argv[])
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
         // Delegate frame drawing to the app
@@ -284,10 +279,10 @@ int main(int argc, char* argv[])
 
     // Cleanup
     ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 
-    SDL_GL_DeleteContext(gl_context);
+    SDL_GL_DestroyContext(gl_context);
     SDL_DestroyWindow(g_Window);
     SDL_Quit();
 
@@ -323,7 +318,7 @@ bool ImGui::SysIsAlwaysOnTop()
 
 void ImGui::SysSetAlwaysOnTop(bool on_top)
 {
-    SDL_SetWindowAlwaysOnTop(g_Window, (SDL_bool)on_top);
+    SDL_SetWindowAlwaysOnTop(g_Window, on_top);
 }
 
 ImS32 ImGui::SysOpen(const char *resource)
@@ -337,11 +332,11 @@ void ImGui::SysAcceptFiles(AppDragAndDropCb cb)
         return SysRejectFiles();
 
     g_DropCb = cb;
-    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
+    SDL_SetEventEnabled(SDL_EVENT_DROP_FILE, true);
 }
 
 void ImGui::SysRejectFiles()
 {
-    SDL_EventState(SDL_DROPFILE, SDL_DISABLE);
+    SDL_SetEventEnabled(SDL_EVENT_DROP_FILE, false);
     g_DropCb = nullptr;
 }
