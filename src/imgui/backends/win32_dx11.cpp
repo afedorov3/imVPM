@@ -1,4 +1,4 @@
-// Dear ImGui: standalone example application for DirectX 11
+// Dear ImGui: standalone example application for DirectX 11 80c9cd1
 
 // Learn about Dear ImGui:
 // - FAQ                  https://dearimgui.com/faq
@@ -248,7 +248,7 @@ int wmain(int argc, wchar_t** wargv)
     ::DestroyWindow(g_Window);
     ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
 
-    return ret;
+    return 0;
 }
 
 // Helper functions

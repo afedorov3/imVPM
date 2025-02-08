@@ -1,4 +1,4 @@
-// Dear ImGui: standalone example application for SDL2 + Vulkan 80c9cd1
+// Dear ImGui: standalone example application for SDL3 + Vulkan 80c9cd1
 
 // Learn about Dear ImGui:
 // - FAQ                  https://dearimgui.com/faq
@@ -14,12 +14,17 @@
 // Read comments in imgui_impl_vulkan.h.
 
 #include "imgui.h"
-#include "imgui_impl_sdl2.h"
+#include "imgui_impl_sdl3.h"
 #include "imgui_impl_vulkan.h"
 #include <stdio.h>          // printf, fprintf
 #include <stdlib.h>         // abort
-#include <SDL.h>
-#include <SDL_vulkan.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
+
+// This example doesn't compile with Emscripten yet! Awaiting SDL3 support.
+#ifdef __EMSCRIPTEN__
+#include "../libs/emscripten/emscripten_mainloop_stub.h"
+#endif
 
 // Volk headers
 #ifdef IMGUI_IMPL_VULKAN_USE_VOLK
@@ -360,26 +365,16 @@ int main(int argc, char* argv[])
     if (ret != 0) return ret;
 
     // Setup SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0)
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD) != 0)
     {
-        printf("Error: %s\n", SDL_GetError());
+        printf("Error: SDL_Init(): %s\n", SDL_GetError());
         return -1;
     }
 
-    // From 2.0.18: Enable native IME.
-#ifdef SDL_HINT_IME_SHOW_UI
-    SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
-#endif
-
     // Create window with Vulkan graphics context
-    Uint32 window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_HIDDEN;
-    switch (ImGui::SysWndState)
-    {
-        case ImGui::WSMinimized: window_flags |= SDL_WINDOW_MINIMIZED; break;
-        case ImGui::WSMaximized: window_flags |= SDL_WINDOW_MAXIMIZED; break;
-        default: break;
-    }
-    g_Window = SDL_CreateWindow("Dear ImGui SDL2+Vulkan system window", ImGui::SysWndPos.x, ImGui::SysWndPos.y, ImGui::SysWndPos.w, ImGui::SysWndPos.h, window_flags);
+    Uint32 window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
+                        | SDL_WINDOW_TRANSPARENT | SDL_WINDOW_HIDDEN;
+    g_Window = SDL_CreateWindow("Dear ImGui SDL3+Vulkan system window", ImGui::SysWndPos.w, ImGui::SysWndPos.h, window_flags);
     if (g_Window == nullptr)
     {
         printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
@@ -387,16 +382,18 @@ int main(int argc, char* argv[])
     }
 
     ImVector<const char*> extensions;
-    uint32_t extensions_count = 0;
-    SDL_Vulkan_GetInstanceExtensions(g_Window, &extensions_count, nullptr);
-    extensions.resize(extensions_count);
-    SDL_Vulkan_GetInstanceExtensions(g_Window, &extensions_count, extensions.Data);
+    {
+        uint32_t sdl_extensions_count = 0;
+        const char* const* sdl_extensions = SDL_Vulkan_GetInstanceExtensions(&sdl_extensions_count);
+        for (uint32_t n = 0; n < sdl_extensions_count; n++)
+            extensions.push_back(sdl_extensions[n]);
+    }
     SetupVulkan(extensions);
 
     // Create Window Surface
     VkSurfaceKHR surface;
     VkResult err;
-    if (SDL_Vulkan_CreateSurface(g_Window, g_Instance, &surface) == 0)
+    if (SDL_Vulkan_CreateSurface(g_Window, g_Instance, g_Allocator, &surface) == 0)
     {
         printf("Failed to create Vulkan surface.\n");
         return 1;
@@ -407,6 +404,7 @@ int main(int argc, char* argv[])
     SDL_GetWindowSize(g_Window, &w, &h);
     ImGui_ImplVulkanH_Window* wd = &g_MainWindowData;
     SetupVulkanWindow(wd, surface, w, h);
+    SDL_SetWindowPosition(g_Window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(g_Window);
 
     // Setup Dear ImGui context
@@ -421,7 +419,7 @@ int main(int argc, char* argv[])
     //ImGui::StyleColorsLight();
 
     // Setup Platform/Renderer backends
-    ImGui_ImplSDL2_InitForVulkan(g_Window);
+    ImGui_ImplSDL3_InitForVulkan(g_Window);
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = g_Instance;
     init_info.PhysicalDevice = g_PhysicalDevice;
@@ -457,7 +455,7 @@ int main(int argc, char* argv[])
 
     // Initial config
     ImGui::AppConfig(true);
-
+ 
     ImRect pMinMax = {};
     // Main loop
     while (!ImGui::AppExit)
@@ -470,59 +468,56 @@ int main(int argc, char* argv[])
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
-            ImGui_ImplSDL2_ProcessEvent(&event);
-            if (event.type == SDL_QUIT)
+            ImGui_ImplSDL3_ProcessEvent(&event);
+            if (event.type == SDL_EVENT_QUIT)
                 ImGui::AppExit = true;
-            else if (event.type == SDL_DROPFILE)
+            else if (event.type == SDL_EVENT_DROP_FILE)
             {
                 if (g_DropCb)
-                    g_DropCb(event.drop.file);
-                SDL_free(event.drop.file);
+                    g_DropCb(event.drop.data);
             }
-            else if (event.type == SDL_WINDOWEVENT && event.window.windowID == SDL_GetWindowID(g_Window))
+            else if (event.window.windowID == SDL_GetWindowID(g_Window))
             {
-                switch (event.window.event)
+                switch (event.type)
                 {
-                    case SDL_WINDOWEVENT_CLOSE:
+                    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
                         ImGui::AppExit = true;
                         break;
-                    case SDL_WINDOWEVENT_RESIZED:
+                    case SDL_EVENT_WINDOW_RESIZED:
                         if ((SDL_GetWindowFlags(g_Window) & (SDL_WINDOW_FULLSCREEN
                                                            | SDL_WINDOW_MINIMIZED
-                                                           | SDL_WINDOW_MAXIMIZED
-                                                           | SDL_WINDOW_FULLSCREEN_DESKTOP)) == 0)
+                                                           | SDL_WINDOW_MAXIMIZED)) == 0)
                         {
                             ImGui::SysWndPos.w = event.window.data1;
                             ImGui::SysWndPos.h = event.window.data2;
                         }
                         break;
-                    case SDL_WINDOWEVENT_MOVED:
+                    case SDL_EVENT_WINDOW_MOVED:
                         if ((SDL_GetWindowFlags(g_Window) & (SDL_WINDOW_FULLSCREEN
                                                            | SDL_WINDOW_MINIMIZED
-                                                           | SDL_WINDOW_MAXIMIZED
-                                                           | SDL_WINDOW_FULLSCREEN_DESKTOP)) == 0)
+                                                           | SDL_WINDOW_MAXIMIZED)) == 0)
                         {
                             int top, left;
-                            if (SDL_GetWindowBordersSize(g_Window, &top, &left, NULL, NULL) == 0)
+                            if (SDL_GetWindowBordersSize(g_Window, &top, &left, NULL, NULL))
                             {
                                 ImGui::SysWndPos.x = event.window.data1 - left;
                                 ImGui::SysWndPos.y = event.window.data2 - top;
                             }
                         }
                         break;
-                    case SDL_WINDOWEVENT_MINIMIZED:
+                    case SDL_EVENT_WINDOW_MINIMIZED:
                         ImGui::SysWndState = ImGui::WSMinimized;
                         break;
-                    case SDL_WINDOWEVENT_MAXIMIZED:
+                    case SDL_EVENT_WINDOW_MAXIMIZED:
                         ImGui::SysWndState = ImGui::WSMaximized;
                         break;
-                    case SDL_WINDOWEVENT_RESTORED:
+                    case SDL_EVENT_WINDOW_RESTORED:
                         ImGui::SysWndState = ImGui::WSNormal;
                         break;
-                    case SDL_WINDOWEVENT_FOCUS_GAINED:
+                    case SDL_EVENT_WINDOW_FOCUS_GAINED:
                         ImGui::SysWndFocus = true;
                         break;
-                    case SDL_WINDOWEVENT_FOCUS_LOST:
+                    case SDL_EVENT_WINDOW_FOCUS_LOST:
                         ImGui::SysWndFocus = false;
                         break;
                 }
@@ -562,7 +557,7 @@ int main(int argc, char* argv[])
 
         // Start the Dear ImGui frame
         ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
         // Delegate frame drawing to the app
@@ -592,7 +587,7 @@ int main(int argc, char* argv[])
     err = vkDeviceWaitIdle(g_Device);
     check_vk_result(err);
     ImGui_ImplVulkan_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 
     CleanupVulkanWindow();
@@ -633,7 +628,7 @@ bool ImGui::SysIsAlwaysOnTop()
 
 void ImGui::SysSetAlwaysOnTop(bool on_top)
 {
-    SDL_SetWindowAlwaysOnTop(g_Window, (SDL_bool)on_top);
+    SDL_SetWindowAlwaysOnTop(g_Window, on_top);
 }
 
 ImS32 ImGui::SysOpen(const char *resource)
@@ -647,11 +642,11 @@ void ImGui::SysAcceptFiles(AppDragAndDropCb cb)
         return SysRejectFiles();
 
     g_DropCb = cb;
-    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
+    SDL_SetEventEnabled(SDL_EVENT_DROP_FILE, true);
 }
 
 void ImGui::SysRejectFiles()
 {
-    SDL_EventState(SDL_DROPFILE, SDL_DISABLE);
+    SDL_SetEventEnabled(SDL_EVENT_DROP_FILE, false);
     g_DropCb = nullptr;
 }

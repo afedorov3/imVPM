@@ -2526,7 +2526,7 @@ static void ProcessLog()
 // from src/plug.c:fft_analyze() @ https://github.com/tsoding/musializer
 static void SpectrumWindow(bool *show)
 {
-    static const double fft_quant = Analyzer::SAMPLE_FREQ / Analyzer::FFTSIZE;
+    static const double fft_binw = Analyzer::SAMPLE_FREQ / Analyzer::FFTSIZE;
     static const double step = std::pow(2.0, 1.0/12.0);
     static const double fbot = floor(Analyzer::Analyzer::FREQ_C2 / step) * step;
     static const double ftop = std::min(Analyzer::SAMPLE_FREQ / 2, ceil(Analyzer::FREQ_C7 / step) * step);
@@ -2560,7 +2560,7 @@ static void SpectrumWindow(bool *show)
             size_t cnt = 0;
             for (double f = fbot; f <= ftop; f *= step)
             {
-                size_t q = (size_t)round(f / fft_quant), qtop = (size_t)round(f * step / fft_quant);
+                size_t q = (size_t)round(f / fft_binw), qtop = (size_t)round(f * step / fft_binw);
                 float a = 0.0f;
                 do
                 {
@@ -2594,7 +2594,7 @@ static void SpectrumWindow(bool *show)
     float height = rmax.y - rmin.y;
     int n_peak = f_peak >= 0.0 ? (int)std::round((std::log2(f_peak) - std::log2(fbot)) * 12.0) : -1;
     rmax.x = rmin.x + width;
-    double dt = 1.0f / ImGui::GetIO().Framerate;
+    double dt = 1.0 / ImGui::GetIO().Framerate;
     constexpr float smoothness = 10;
     for (size_t i = 0; i < keycnt; ++i)
     {

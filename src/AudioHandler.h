@@ -176,8 +176,7 @@ private:
             if (queue.empty())
                 cond.wait(lock, [this]{ return !queue.empty(); } );
 
-            Cmd cmd;
-            cmd = queue.front();
+            Cmd cmd(queue.front());
             queue.pop_front();
 
             return cmd;
