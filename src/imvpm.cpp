@@ -192,7 +192,7 @@ static constexpr const char *lut_note[][12] = {
                                              {  "Do", "Do", "Re", "Re", "Mi", "Fa", "Fa", "Sol","Sol","La", "La", "Si"}  // NoteNamesRomance
                                               };
 static constexpr const char *lut_semisym[] = {   "",  "♯",  " " }; // semitone symbol selector, [0] elem for labels with no semitone indicator
-static constexpr       char lut_number[][12] = {  // gives note number or 0 if semitone
+static constexpr       char lut_number[][12] = {  // gives note number or 0 for semitone
                                              {   1 ,   0 ,   2 ,   3 ,   0 ,   4 ,   0 ,   5 ,   6 ,   0 ,   7 ,   0  }, // Minor scale
                                              {   1 ,   0 ,   2 ,   0 ,   3 ,   4 ,   0 ,   5 ,   0 ,   6 ,   0 ,   7  }  // Major scale
                                                };
@@ -467,11 +467,11 @@ static ImFont   *font_widget =  nullptr;  // widget icons font ptr
 static ImFont     *font_grid =  nullptr;  // grid font ptr
 static ImFont    *font_pitch =  nullptr;  // pitch font ptr
 static ImFont    *font_tuner =  nullptr;  // tuner font ptr
-static bool   fonts_reloaded =    false;  // Fonts reloaded signal
+static bool   fonts_reloaded =    false;  // fonts reloaded flag
 static bool             hold =    false;  // hold is active
 static float        ui_scale =      1.0;  // DPI scaling factor
 static float        x_offset =     0.0f;  // horizontal panning offset
-static bool      x_off_reset =    false;  // reset offset signal
+static bool      x_off_reset =    false;  // reset offset flag
 static float      x_zoom_min =     0.0f;  // plot horizontal zoom min limit based on window size,
                                           //           DPI scale and Analyzer's pitch array size
 static float           c_top =     0.0f;  // current top plot position, Cents
@@ -495,9 +495,9 @@ static float    progress_hgt;             // UI playback progress height
 static bool   progress_hover =    false;  // UI playback progress is hovered
 static std::vector<double> f_peak_buf(TunerSmoothDef, -1.0);    // peak frequency averaging buffer
 static size_t f_peak_buf_pos =        0;  // peak frequency averaging buffer position
-static pathstr_t config_file;             // path to config file
+static pathstr_t config_file;             // path to the config file
 static bool        ro_config = false;     // config file is read-only or can't be accessed
-static std::string last_file;             // path to last active file
+static std::string last_file;             // path to the last active file
 static std::string open_dir;              // directory of the last file open
 static std::string cmd_options;           // command line options help message
 
@@ -509,7 +509,7 @@ static unique_select_folder select_folder_dlg = nullptr; // select folder dialog
 static Analyzer analyzer;
 static std::mutex analyzer_mtx;
 static Logger msg_log;
-static AudioHandler audiohandler(&msg_log, 44100 /* Fsample */, 2 /* channels */, AudioHandler::FormatF32 /* sample format */, AudioHandler::FormatS16 /* record format */, 1470 /* cb interval */);
+static AudioHandler audiohandler(&msg_log, 44100 /* Fsample */, 2 /* channels */, AudioHandler::FormatF32 /* sample format */, AudioHandler::FormatS16 /* record format */, Analyzer::ANALYZE_INTERVAL /* cb interval */);
 static AudioHandler::State ah_state;      // frame-locked handler state
 static uint64_t ah_len = 0, ah_pos = 0;   // handler length and position, applicable only to playback and record
 static size_t hold_cnt = 0;               // frames missed due to hold
@@ -719,6 +719,7 @@ static void Play(const char *file = nullptr)
         last_file = file;
 
     hold = false;
+    x_off_reset = true;
     audiohandler.stop();
     audiohandler.play(file);
 }
@@ -763,6 +764,7 @@ static void Capture()
 {
     if (!ah_state.isCapturing())
     {
+        x_off_reset = true;
         audiohandler.stop();
         audiohandler.capture();
     }
@@ -805,6 +807,7 @@ static void Record(const char *file = nullptr)
     last_file += ".wav";
 
     hold = false;
+    x_off_reset = true;
     audiohandler.stop();
     audiohandler.record(last_file.c_str());
 }
@@ -817,9 +820,12 @@ static void Pause()
 
 static void Resume()
 {
-    hold = false;
     if (ah_state.canResume())
+    {
+        hold = false;
+        x_off_reset = true;
         audiohandler.resume();
+    }
 }
 
 static void ToggleHold()
@@ -839,8 +845,8 @@ static void TogglePause()
     else if (ah_state.canResume())
     {
         hold = false;
-        audiohandler.resume();
         x_off_reset = true;
+        audiohandler.resume();
     }
 }
 
@@ -1358,7 +1364,7 @@ int ImGui::AppInit(int argc, char const *const* argv)
     LoadSettings();
 
     AlignTempo();
-    audiohandler.attachFrameDataCb(sampleCb, nullptr);
+    audiohandler.attachFrameDataCb(sampleCb);
     audiohandler.attachNotificationCb(AudioHandler::EventPlayFile
                                     | AudioHandler::EventRecordFile
                                     | AudioHandler::EventSeek
@@ -1835,7 +1841,7 @@ static void PlaybackDevices()
 
 static void AudioControl()
 {
-    // align cursor to pixel boundary for record dot to align properly
+    // align cursor to pixel boundary for the record dot to align properly
     ImVec2 pos = ImGui::GetCursorPos();
     pos.x = std::roundf(pos.x);
     pos.y = std::roundf(pos.y);
@@ -2319,8 +2325,8 @@ static void Draw()
     // horizontal grid / metronome
     if (tempo_grid || metronome)
     {
-        const float intervals_per_bpm = 60.0f/* sec */ / (float)tempo_val / Analyzer::get_interval_sec();
-        const size_t total_count_adjusted = total_analyze_cnt + Analyzer::PITCH_BUF_SIZE - 1; // ignore current pitch buffer element
+        const float intervals_per_bpm = 60.0f /* seconds */ / (float)tempo_val / Analyzer::get_interval_sec();
+        const size_t total_count_adjusted = total_analyze_cnt - 1; // ignore current pitch buffer element
 
         if (metronome)
         {
