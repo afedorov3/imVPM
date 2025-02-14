@@ -1307,8 +1307,8 @@ void sampleCb(_UNUSED_ AudioHandler::Format format, uint32_t channels, const voi
     for (uint64_t i = 0; i < sampleCount; i += channels)
     {
         float sample = bufptr[i];
-        for (uint32_t ch = 1; ch < channels; ++ch) // downmix to mono
-            sample += bufptr[i + ch]; // will overflow on integral formats
+        for (uint32_t ch = 1; ch < channels; ch++) // downmix to mono
+            sample += bufptr[i + ch];
         analyzer.addData(sample / channels);
     }
 }
