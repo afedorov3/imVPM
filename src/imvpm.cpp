@@ -720,6 +720,7 @@ static void Play(const char *file = nullptr)
 
     hold = false;
     x_off_reset = true;
+    analyzer.clearData();
     audiohandler.stop();
     audiohandler.play(file);
 }
@@ -729,7 +730,8 @@ static void Seek(uint64_t seek_to_frame)
     if (!ah_state.canSeek())
         return;
 
-    audiohandler.seek(seek_to_frame);
+    analyzer.clearData();
+    audiohandler.seek(seek_to_frame - seek_to_frame % Analyzer::ANALYZE_INTERVAL); // align to analyzer frame
 }
 
 static void Seek(double seek_to_second, bool relative = false)
@@ -757,7 +759,8 @@ static void Seek(double seek_to_second, bool relative = false)
             frame = ((uint64_t)-relframes < ah_pos) ? ah_pos + relframes : 0;
     }
 
-    audiohandler.seek(frame);
+    analyzer.clearData();
+    audiohandler.seek(frame - frame % Analyzer::ANALYZE_INTERVAL);
 }
 
 static void Capture()
@@ -765,6 +768,7 @@ static void Capture()
     if (!ah_state.isCapturing())
     {
         x_off_reset = true;
+        analyzer.clearData();
         audiohandler.stop();
         audiohandler.capture();
     }
@@ -808,6 +812,7 @@ static void Record(const char *file = nullptr)
 
     hold = false;
     x_off_reset = true;
+    analyzer.clearData();
     audiohandler.stop();
     audiohandler.record(last_file.c_str());
 }
@@ -2282,7 +2287,7 @@ static void Draw()
     float x_left, x_right;
     // octave boundary notch size and direction
     float notch = scale_chroma ? 0.0f : 4.0f * ui_scale;
-    // ruler label position and alight
+    // ruler label position and align
     float x_rullbl; int align_rullbl;
     if (rul_right)
     {
@@ -2391,7 +2396,8 @@ static void Draw()
             float p = pitch_buf[(pitch_buf_offset - i) % Analyzer::PITCH_BUF_SIZE];
             if (p >= 0.0f)
             {
-                ImVec2 v(x_right - x_zoom_scaled * i, std::roundf(c2y_off - (p + c_calib) * c2y_mul));
+                p += c_calib;
+                ImVec2 v(x_right - x_zoom_scaled * i, std::roundf(c2y_off - p * c2y_mul));
                 if (pp >= 0.0f && std::fabs(p - pp) <= dc_max)
                     draw_list->AddLine(v, pv, color, line_w);
                 pv = v;
