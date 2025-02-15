@@ -266,6 +266,8 @@ static void ah_device_callback(const ma_device_notification* pNotification)
         // device externally stopped, sync the state
         if (ppc->log) ppc->log->LogMsg(LOG_WARN, "%s device stopped",
                 pNotification->pDevice->type == ma_device_type_playback ? "Playback" : "Capture");
+        // reverse order
+        ppc->cmdQueue.internalCommand(AudioHandler::CmdEnumerateDevices);
         ppc->cmdQueue.internalCommand(AudioHandler::CmdStop);
     }
 }
