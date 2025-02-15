@@ -238,23 +238,23 @@ set(FONTS_SRC ${CMAKE_SOURCE_DIR}/external/fonts)
 
 if(IMVPM_GRAPHICS STREQUAL "dx11")
   execute_process(
-    COMMAND ${PATCH} -Ns -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/imgui/ImGui_ImplDX11_ReCreateFontsTexture.patch
+    COMMAND ${PATCH} -N -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/imgui/ImGui_ImplDX11_ReCreateFontsTexture.patch
     WORKING_DIRECTORY ${IMGUI_SRC}
   )
 endif()
 
 execute_process(
-  COMMAND ${PATCH} -Ns -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/miniaudio/miniaudio_fixes.patch
+  COMMAND ${PATCH} -N -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/miniaudio/miniaudio_fixes.patch
   WORKING_DIRECTORY ${MINIAUDIO_SRC}
 )
 
 execute_process(
-  COMMAND ${PATCH} -Ns -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/fft4g/fft4g-size.patch
+  COMMAND ${PATCH} -N -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/fft4g/fft4g-size.patch
   WORKING_DIRECTORY ${FFT4G_SRC}
 )
 
 execute_process(
-  COMMAND ${PATCH} -Ns -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/portable-file-dialogs/portable-file-dialogs-fixes.patch
+  COMMAND ${PATCH} -N -p0 -i ${CMAKE_SOURCE_DIR}/assets/external/portable-file-dialogs/portable-file-dialogs-fixes.patch
   WORKING_DIRECTORY ${PFD_SRC}
 )
 

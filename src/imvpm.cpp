@@ -2720,14 +2720,15 @@ static void SettingsWindow()
     // transpose
     {
         bool update = false;
-        ImGui::BeginGroup();
-        ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Transpose");
-        ImGui::SameLine(); update |= ImGui::RadioButton("C Inst.", &transpose, TransposeC);
+        ImGui::Indent();
+        ImGui::BeginGroup();
+        update |= ImGui::RadioButton("C Inst.", &transpose, TransposeC);
         ImGui::SameLine(); update |= ImGui::RadioButton("B♭ Inst.", &transpose, TransposeBb);
         ImGui::SameLine(); update |= ImGui::RadioButton("E♭ Inst.", &transpose, TransposeEb);
         ImGui::SameLine(); update |= ImGui::RadioButton("F Inst.", &transpose, TransposeF);
         ImGui::EndGroup();
+        ImGui::Unindent();
         if (update)
             UpdateCalibration();
     }
@@ -2776,6 +2777,13 @@ static void SettingsWindow()
         ImGui::Unindent();
     }
 
+    // scale selector
+    {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Scale");
+        ImGui::SameLine(); ScaleSelector(true /* from_settings */);
+    }
+
     // UI behavior
     {
         ImGui::TextUnformatted("UI behavior");
@@ -2783,8 +2791,8 @@ static void SettingsWindow()
         ImGui::Checkbox("HOLD", &but_hold);
         ImGui::SameLine(); ImGui::Checkbox("Scale", &but_scale);
         ImGui::SameLine(); ImGui::Checkbox("Tempo", &but_tempo);
-        ImGui::SameLine(); ImGui::Checkbox("Device selector", &but_devices);
-        ImGui::Checkbox("Click2Hold", &click_hold);
+        ImGui::Checkbox("Device selector", &but_devices);
+        ImGui::SameLine(); ImGui::Checkbox("Click2Hold", &click_hold);
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Seek step, seconds");
         ImGui::SameLine(); ImGui::SliderFloat("##SeekStep", &seek_step, SeekStepMin, SeekStepMax, "%.1f", ImGuiSliderFlags_AlwaysClamp);
@@ -2799,13 +2807,6 @@ static void SettingsWindow()
         if (!custom_scaling)
             ImGui::EndDisabled();
         ImGui::Unindent();
-    }
-
-    // scale selector
-    {
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Scale");
-        ImGui::SameLine(); ScaleSelector(true /* from_settings */);
     }
 
     // record files directory
@@ -2908,7 +2909,7 @@ void ImGui::ShowAboutWindow(_UNUSED_ bool* p_open)
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, -1.0f));
     ImGui::TextUnformatted("Port*");
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("All core features code was stolen from decompiled original apk.");
+        ImGui::SetTooltip("All core features code was stolen from the decompiled original APK.");
     ImGui::SameLine(); ImGui::TextUnformatted(" to PC of ");
     ImGui::SameLine();
     ImGui::PopStyleVar();
