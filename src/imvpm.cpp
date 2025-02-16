@@ -133,13 +133,7 @@ using namespace logger;
 #define PRIu64 "llu"
 #endif
 
-// Helpers macros
-// We normally try to not use many helpers in imgui_demo.cpp in order to make code easier to copy and paste,
-// but making an exception here as those are largely simplifying code...
-// In other imgui sources we can use nicer internal functions from imgui_internal.h (ImMin/ImMax) but not in the demo.
-#define IM_MIN(A, B)            (((A) < (B)) ? (A) : (B))
-#define IM_MAX(A, B)            (((A) >= (B)) ? (A) : (B))
-#define IM_CLAMP(V, MN, MX)     ((V) < (MN) ? (MN) : (V) > (MX) ? (MX) : (V))
+#define FCLAMP(V, MN, MX)     std::fmax((MN), std::fmin((V), (MX)))
 
 #define _WIDESTR(s) L ## s
 #define WIDESTR(s) _WIDESTR(s)
@@ -730,6 +724,8 @@ static void Seek(uint64_t seek_to_frame)
     if (!ah_state.canSeek())
         return;
 
+    seek_to_frame = std::min(seek_to_frame, ah_len);
+
     analyzer.clearData();
     audiohandler.seek(seek_to_frame - seek_to_frame % Analyzer::ANALYZE_INTERVAL); // align to analyzer frame
 }
@@ -745,10 +741,8 @@ static void Seek(double seek_to_second, bool relative = false)
     {
         if (seek_to_second <= 0.0)
             frame = 0;
-        else if (uint64_t(seek_to_second * audiohandler.sampleRateHz) < ah_len)
-            frame = uint64_t(seek_to_second * audiohandler.sampleRateHz);
         else
-            frame = ah_len;
+            frame = std::min((uint64_t)(seek_to_second * audiohandler.sampleRateHz), ah_len);
     }
     else
     {
@@ -2038,9 +2032,9 @@ static void PlaybackProgress()
     if (hover && progress_hover)
     {
         ImVec2 mouse_pos = ImGui::GetMousePos() - ImGui::GetWindowPos();
-        uint64_t seek_to = std::min(uint64_t(mouse_pos.x / size.x * ah_len), ah_len);
+        uint64_t seek_to = std::min((uint64_t)(mouse_pos.x / size.x * ah_len), ah_len);
         ImGui::SetTooltip("%s", audiohandler.framesToTime(seek_to).c_str());
-        if (seek && ah_state.canSeek())
+        if (seek)
             Seek(seek_to);
     }
 }
@@ -2134,8 +2128,8 @@ static void InputControl()
             float y_zoomp = y_zoom;
 
             y_zoom += io.MouseWheel * PlotYZoomSpd;
-            y_zoom  = std::max(PlotYZoomMin, std::min(y_zoom, PlotYZoomMax));
-                
+            y_zoom  = FCLAMP(y_zoom, PlotYZoomMin, PlotYZoomMax);
+
             // zoom around mouse pos
             c_pos += (c_top - c_pos) * (1.0f - y_zoomp / y_zoom) * (1.0f - io.MousePos.y / wsize.y);
         }
@@ -2146,7 +2140,7 @@ static void InputControl()
             float x_zoomp = x_zoom;
 
             x_zoom += io.MouseWheel * PlotXZoomSpd;
-            x_zoom  = std::max(x_zoom_min, std::min(x_zoom, PlotXZoomMax));
+            x_zoom  = FCLAMP(x_zoom, x_zoom_min, PlotXZoomMax);
 
             // zoom around mouse pos
             if (x_offset)
@@ -2314,17 +2308,13 @@ static void Draw()
     // limit offset
     if (x_off_reset)
     {
-        x_offset = (int)(x_offset - (x_offset >= 200.0f ? 50.0f : 50.0f * x_offset / 200.0f)); // just arbitrary easing
+        x_offset = (int)(x_offset - std::fmin(50.0f, x_offset / 4.0f)); // just arbitrary easing
         x_off_reset = x_offset > 0;
     }
-    if (x_offset < 0)
-        x_offset = 0.0f;
-    else
-        x_offset = std::min((float)(Analyzer::PITCH_BUF_SIZE - 2 - int(x_span / x_zoom)), x_offset);
+    x_offset = FCLAMP(x_offset, 0.0f, (float)(Analyzer::PITCH_BUF_SIZE - 2 - (int)(x_span / x_zoom)));
     // adjust horizontal zoom
-    x_zoom_min = std::max(PlotXZoomMin, x_span / (float)(Analyzer::PITCH_BUF_SIZE - 2)); // limit zoom by pitch buffer size; ignore current pitch buffer element
-    if (x_zoom < x_zoom_min)
-        x_zoom = x_zoom_min;
+    x_zoom_min = std::fmax(PlotXZoomMin, x_span / (float)(Analyzer::PITCH_BUF_SIZE - 2)); // limit zoom by pitch buffer size; ignore current pitch buffer element
+    x_zoom = std::fmax(x_zoom, x_zoom_min);
     float x_zoom_scaled = x_zoom * ui_scale;
 
     // horizontal grid / metronome
@@ -2525,7 +2515,7 @@ static void ProcessLog()
         }
 
         ImU32 color = ImGui::GetColorU32(*msg_colors[entry.Lvl],
-                alpha * std::min(faderate - std::fabs(std::fmod((float)(MsgTimeout[curMsg] - time) * faderate * 2.0f / msgTimeoutSec, faderate * 2.0f) - faderate), 1.0f));
+                alpha * std::fmin(faderate - std::fabs(std::fmod((float)(MsgTimeout[curMsg] - time) * faderate * 2.0f / msgTimeoutSec, faderate * 2.0f) - faderate), 1.0f));
         AddTextAligned(pos, TextAlignCenter, TextAlignMiddle, color, draw_list, entry.Msg.get());
 
         pos.y -= font_def_sz * 1.5f;
@@ -2541,7 +2531,7 @@ static void SpectrumWindow(bool *show)
     static const double fft_binw = Analyzer::SAMPLE_FREQ / Analyzer::FFTSIZE;
     static const double step = std::pow(2.0, 1.0/12.0);
     static const double fbot = floor(Analyzer::Analyzer::FREQ_C2 / step) * step;
-    static const double ftop = std::min(Analyzer::SAMPLE_FREQ / 2, ceil(Analyzer::FREQ_C7 / step) * step);
+    static const double ftop = std::fmin(Analyzer::SAMPLE_FREQ / 2.0, ceil(Analyzer::FREQ_C7 / step) * step);
     static const size_t keycnt = (size_t)((std::log2(ftop) - std::log2(fbot)) * 12.0 + 1);
     static std::unique_ptr<float[]> out_log(new float[keycnt]());
     static std::unique_ptr<float[]> out_smooth(new float[keycnt]());
@@ -2611,7 +2601,7 @@ static void SpectrumWindow(bool *show)
     for (size_t i = 0; i < keycnt; ++i)
     {
         out_smooth[i] += (out_log[i] - out_smooth[i]) * smoothness * dt;
-        rmin.y = rmax.y - std::max(margin, out_smooth[i] * height);
+        rmin.y = rmax.y - std::fmax(margin, out_smooth[i] * height);
         draw_list->AddRectFilled(rmin, rmax, (int)i == n_peak ? plot_colors[PlotIdxPitch] : UI_colors[UIIdxDefault]);
         rmin.x += adv;
         rmax.x += adv;
