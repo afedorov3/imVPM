@@ -63,8 +63,8 @@ options:
 ## Building from source
 Build tools required:  
  * CMake
- * git
- * ninja
+ * Git
+ * Ninja
  * C++17 compiler
  * patch (on windows you'll get it with git, just
    ```

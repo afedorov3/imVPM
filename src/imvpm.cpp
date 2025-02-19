@@ -159,6 +159,91 @@ typedef std::string pathstr_t;
 #endif
 
 //-----------------------------------------------------------------------------
+// [SECTION] Helper classes
+//-----------------------------------------------------------------------------
+
+class HoldingAnalyzer : public Analyzer
+{
+public:
+    HoldingAnalyzer(std::mutex &_mtx) :
+        mtx(_mtx),
+        hold_fft_data(new double[FFTSIZE]),
+        hold_pitch_buf(new float[PITCH_BUF_SIZE])
+    {
+        unhold();
+    }
+
+    bool on_hold() { return onhold; }
+
+    void hold()
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        std::copy(fft_data.get(), fft_data.get() + FFTSIZE, hold_fft_data.get());
+        std::copy(pitch_buf.get(), pitch_buf.get() + PITCH_BUF_SIZE, hold_pitch_buf.get());
+        hold_total_analyze_cnt =  total_analyze_cnt;
+        hold_peak_freq         =  peak_freq;
+        hold_pitch_buf_pos     =  pitch_buf_pos;
+
+        fft_data_x           =  hold_fft_data;
+        pitch_buf_x          =  hold_pitch_buf;
+        total_analyze_cnt_x  = &hold_total_analyze_cnt;
+        peak_freq_x          = &hold_peak_freq;
+        pitch_buf_pos_x      = &hold_pitch_buf_pos;
+        onhold = true;
+    }
+
+    void unhold()
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        fft_data_x          =  fft_data;
+        pitch_buf_x         =  pitch_buf;
+        total_analyze_cnt_x = &total_analyze_cnt;
+        peak_freq_x         = &peak_freq;
+        pitch_buf_pos_x     = &pitch_buf_pos;
+        onhold = false;
+    }
+
+    double get_peak_freq()
+    {
+        return *peak_freq_x;
+    }
+
+    std::shared_ptr<const double[]> get_fft_buf()
+    {
+        return fft_data_x;
+    }
+
+    std::shared_ptr<const float[]> get_pitch_buf()
+    {
+        return pitch_buf_x;
+    }
+
+    size_t get_pitch_buf_pos()
+    {
+        return *pitch_buf_pos_x;
+    }
+
+    size_t get_total_analyze_cnt()
+    {
+        return *total_analyze_cnt_x;
+    }
+
+protected:
+    std::mutex &mtx;
+    bool onhold;
+    size_t hold_total_analyze_cnt;
+    const size_t *total_analyze_cnt_x;
+    double hold_peak_freq;
+    const double *peak_freq_x;
+    std::shared_ptr<double[]> hold_fft_data;
+    std::shared_ptr<const double[]> fft_data_x;
+    std::shared_ptr<float[]> hold_pitch_buf;
+    std::shared_ptr<const float[]> pitch_buf_x;
+    size_t hold_pitch_buf_pos;
+    const size_t *pitch_buf_pos_x;
+};
+
+//-----------------------------------------------------------------------------
 // [SECTION] App state
 //-----------------------------------------------------------------------------
 
@@ -462,7 +547,6 @@ static ImFont     *font_grid =  nullptr;  // grid font ptr
 static ImFont    *font_pitch =  nullptr;  // pitch font ptr
 static ImFont    *font_tuner =  nullptr;  // tuner font ptr
 static bool   fonts_reloaded =    false;  // fonts reloaded flag
-static bool             hold =    false;  // hold is active
 static float        ui_scale =      1.0;  // DPI scaling factor
 static float        x_offset =     0.0f;  // horizontal panning offset
 static bool      x_off_reset =    false;  // reset offset flag
@@ -500,13 +584,12 @@ static unique_open_file open_file_dlg = nullptr; // open file dialog operation
 typedef std::unique_ptr<pfd::select_folder> unique_select_folder;
 static unique_select_folder select_folder_dlg = nullptr; // select folder dialog operation
 
-static Analyzer analyzer;
 static std::mutex analyzer_mtx;
+static HoldingAnalyzer analyzer(analyzer_mtx);
 static Logger msg_log;
 static AudioHandler audiohandler(&msg_log, 44100 /* Fsample */, 2 /* channels */, AudioHandler::FormatF32 /* sample format */, AudioHandler::FormatS16 /* record format */, Analyzer::ANALYZE_INTERVAL /* cb interval */);
 static AudioHandler::State ah_state;      // frame-locked handler state
 static uint64_t ah_len = 0, ah_pos = 0;   // handler length and position, applicable only to playback and record
-static size_t hold_cnt = 0;               // frames missed due to hold
 
 // window handling
 typedef enum {
@@ -703,7 +786,6 @@ static void AlignTempo(size_t position = 0)
     std::lock_guard<std::mutex> lock(analyzer_mtx);
     analyzer.set_total_analyze_cnt(Analyzer::PITCH_BUF_SIZE + position); // offset for panning
     analyzer.clearData();
-    hold_cnt = 0;
 }
 
 // audio control wrappers
@@ -712,11 +794,11 @@ static void Play(const char *file = nullptr)
     if (file && *file)
         last_file = file;
 
-    hold = false;
-    x_off_reset = true;
     analyzer.clearData();
+    analyzer.unhold();
     audiohandler.stop();
     audiohandler.play(file);
+    x_off_reset = true;
 }
 
 static void Seek(uint64_t seek_to_frame)
@@ -761,10 +843,10 @@ static void Capture()
 {
     if (!ah_state.isCapturing())
     {
-        x_off_reset = true;
         analyzer.clearData();
         audiohandler.stop();
         audiohandler.capture();
+        x_off_reset = true;
     }
 }
 
@@ -804,11 +886,11 @@ static void Record(const char *file = nullptr)
 
     last_file += ".wav";
 
-    hold = false;
-    x_off_reset = true;
     analyzer.clearData();
+    analyzer.unhold();
     audiohandler.stop();
     audiohandler.record(last_file.c_str());
+    x_off_reset = true;
 }
 
 static void Pause()
@@ -821,17 +903,21 @@ static void Resume()
 {
     if (ah_state.canResume())
     {
-        hold = false;
-        x_off_reset = true;
+        analyzer.unhold();
         audiohandler.resume();
+        x_off_reset = true;
     }
 }
 
 static void ToggleHold()
 {
-    hold = !hold;
-    if (!hold)
+    if (analyzer.on_hold())
+    {
+        analyzer.unhold();
         x_off_reset = true;
+    }
+    else
+        analyzer.hold();
 }
 
 static void TogglePause()
@@ -843,9 +929,9 @@ static void TogglePause()
         audiohandler.pause();
     else if (ah_state.canResume())
     {
-        hold = false;
-        x_off_reset = true;
+        analyzer.unhold();
         audiohandler.resume();
+        x_off_reset = true;
     }
 }
 
@@ -1285,24 +1371,12 @@ static inline bool ShowWindow(WndState &state)
 void sampleCb(_UNUSED_ AudioHandler::Format format, uint32_t channels, const void *pData, uint32_t frameCount, _UNUSED_ void *userData)
 {
     std::lock_guard<std::mutex> lock(analyzer_mtx);
-    if (hold)
-    {
-        hold_cnt++;
-        return;
-    }
-
     const float *bufptr = (const float*)pData;
-    const uint64_t sampleCount = (uint64_t)frameCount * channels;
-    if (hold_cnt)
+    while (frameCount--)
     {
-        analyzer.set_total_analyze_cnt(analyzer.get_total_analyze_cnt() + hold_cnt); // restore tempo pos
-        hold_cnt = 0;
-    }
-    for (uint64_t i = 0; i < sampleCount; i += channels)
-    {
-        float sample = bufptr[i];
-        for (uint32_t ch = 1; ch < channels; ch++) // downmix to mono
-            sample += bufptr[i + ch];
+        float sample = 0.0f;
+        for (uint32_t ch = 0; ch < channels; ch++) // downmix to mono
+            sample += *bufptr++;
         analyzer.addData(sample / channels);
     }
 }
@@ -1993,7 +2067,7 @@ static void ScaleSelector(bool from_settings)
 
 static void HoldButton()
 {
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxDefault], 1.0f - 0.5f * !hold));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxDefault], 1.0f - 0.5f * !analyzer.on_hold()));
     ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
@@ -2261,7 +2335,7 @@ static void Draw()
     c_top = c_pos + wsize.y / c2y_mul;
 
     // do autoscrolling
-    if (autoscroll && !hold && ah_state.isActive() && c_peak >= 0.0 && y_ascrl_grace < ImGui::GetTime() && x_offset == 0.0f)
+    if (autoscroll && !analyzer.on_hold() && ah_state.isActive() && c_peak >= 0.0 && y_ascrl_grace < ImGui::GetTime() && x_offset == 0.0f)
     {
         static int velocity = 0;
 

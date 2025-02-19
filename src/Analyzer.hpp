@@ -89,12 +89,12 @@ public:
         return peak_freq;
     }
 
-    std::shared_ptr<const float[]> get_pitch_buf() {
-        return pitch_buf;
-    }
-
     std::shared_ptr<const double[]> get_fft_buf() {
         return fft_data;
+    }
+
+    std::shared_ptr<const float[]> get_pitch_buf() {
+        return pitch_buf;
     }
 
     size_t get_pitch_buf_pos() {
@@ -144,7 +144,7 @@ public:
         return v1*v1 + v2*v2;
     }
 
-private:
+protected:
     double threshold;
     size_t analyze_cnt;
     size_t total_analyze_cnt;
