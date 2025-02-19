@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(imVocalPitchMonitor VERSION 0.2.4 DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
+project(imVocalPitchMonitor VERSION 0.2.5 DESCRIPTION "VocalPitchMonitor port to PC" LANGUAGES CXX C)
 
 if(NOT DEFINED OPUS_SUPPORT)
   set(OPUS_SUPPORT "yes")
