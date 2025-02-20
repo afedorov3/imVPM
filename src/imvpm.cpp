@@ -1326,10 +1326,10 @@ static bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxWidgetTe
     if (disabled)
         ImGui::BeginDisabled();
     ImGui::PushFont(font_widget);
-    ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor(color));
-    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
+    ImGui::PushStyleColor(ImGuiCol_Text, color);
+    ImGui::PushStyleColor(ImGuiCol_Button, UI_colors[UIIdxWidget]);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, UI_colors[UIIdxWidgetHovered]);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, UI_colors[UIIdxWidgetActive]);
     ret = ImGui::Button(text, widget_sz);
     ImGui::PopStyleColor(4);
     ImGui::PopFont();
@@ -1784,9 +1784,9 @@ void ImGui::AppNewFrame()
         {
             float x_sz = font_def_sz * ui_scale + ImGui::GetStyle().FramePadding.x;
             ImGui::SetCursorPos(ImVec2(wsize.x - x_sz - rullbl_sz.x * rul_right, center.y - wsize.y / 4));
-            ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(ImGui::GetColorU32(UI_colors[UIIdxWidgetHovered], 0.75f)));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetColorU32(UI_colors[UIIdxWidgetHovered], 0.75f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, UI_colors[UIIdxWidgetHovered]);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, UI_colors[UIIdxWidgetActive]);
             if (ImGui::Button(ICON_FA_ANGLES_RIGHT "##PanReset", ImVec2(x_sz, wsize.y / 2)))
                 x_off_reset = true;
             ImGui::PopStyleColor(3);
@@ -2015,9 +2015,9 @@ static void TempoControl()
     label[3] = '\n';
     ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5f));
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxWidgetText], 0.5f + 0.5f * (metronome || tempo_grid)));
-    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
+    ImGui::PushStyleColor(ImGuiCol_Button, UI_colors[UIIdxWidget]);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, UI_colors[UIIdxWidgetHovered]);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, UI_colors[UIIdxWidgetActive]);
     if (ImGui::Button(label, tempo_sz))
     {
         ImGui::OpenPopup("##TempoPopup");
@@ -2045,14 +2045,14 @@ static void ScaleSelector(bool from_settings)
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(menu_spacing, menu_spacing));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(menu_spacing, menu_spacing));
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxWidgetText], 0.8f));
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, UI_colors[UIIdxWidget]);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, UI_colors[UIIdxWidgetHovered]);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, UI_colors[UIIdxWidgetActive]);
         ImGui::SetNextItemWidth(scale_sel_wdt);
     }
     if (ImGui::BeginCombo("##ScaleSelector", scale_str.c_str(), flags))
     {
-        ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor(UI_colors[UIIdxText]));
+        ImGui::PushStyleColor(ImGuiCol_Text, UI_colors[UIIdxText]);
         for (int n = 0; n < IM_ARRAYSIZE(scale_list); n++)
         {
             const bool is_selected = scale_str.compare(0, std::string::npos, scale_list[n]) == 0;
@@ -2079,9 +2079,9 @@ static void ScaleSelector(bool from_settings)
 static void HoldButton()
 {
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxWidgetText], 0.5f + 0.5f * analyzer.on_hold()));
-    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
+    ImGui::PushStyleColor(ImGuiCol_Button, UI_colors[UIIdxWidget]);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, UI_colors[UIIdxWidgetHovered]);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, UI_colors[UIIdxWidgetActive]);
     if (ImGui::Button("HOLD", hold_btn_sz))
         ToggleHold();
     ImGui::PopStyleColor(4);
@@ -2095,8 +2095,8 @@ static void PlaybackProgress()
     size.y = progress_hgt;
     ImGui::SetCursorPos(pos);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
-    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, (ImVec4)ImColor(UI_colors[UIIdxProgress]));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, UI_colors[UIIdxWidgetHovered]);
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, UI_colors[UIIdxProgress]);
     ImGui::ProgressBar((float)ah_pos / ah_len, size, "");
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar();
