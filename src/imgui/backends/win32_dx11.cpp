@@ -10,6 +10,7 @@
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 #include <d3d11.h>
+#include <dwmapi.h>
 #include <tchar.h>
 #include <memory>
 #include <errno.h>
@@ -55,6 +56,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static UINT GetDPI (HWND hWnd);
 static void CALLBACK GuiChangesCoalescingTimer (HWND hWnd, UINT, UINT_PTR id, DWORD);
 static LRESULT OnDpiChange(WPARAM dpi, const RECT * r);
+void ImmersiveMode(HWND hWnd);
 static std::unique_ptr<wchar_t[]> utf8_to_wchar(const char *utf8str);
 static std::unique_ptr<char[]> wchar_to_utf8(const wchar_t *wstr);
 static std::unique_ptr<char[]> argv_wchar_to_utf8(int argc, wchar_t const *const *wargv);
@@ -110,7 +112,10 @@ int wmain(int argc, wchar_t** wargv)
         return -1;
 
     // support transparent system window
-    ImGui_ImplWin32_EnableAlphaCompositing(g_Window);
+    if (ImGui::SysWndBgColor.w < 1.0f)
+        ImGui_ImplWin32_EnableAlphaCompositing(g_Window);
+    // support Windows 11 theming
+    ImmersiveMode(g_Window);
 
     // Initialize Direct3D
     if (!CreateDeviceD3D(g_Window))
@@ -389,7 +394,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_THEMECHANGED:
     case WM_SETTINGCHANGE:
     case WM_DWMCOMPOSITIONCHANGED:
-        g_idGlobalRefreshTimer = SetTimer (nullptr, g_idGlobalRefreshTimer, 500, GuiChangesCoalescingTimer);
+        g_idGlobalRefreshTimer = SetTimer (hWnd, g_idGlobalRefreshTimer, 500, GuiChangesCoalescingTimer);
         return 0;
     case WM_DROPFILES:
         {
@@ -453,6 +458,8 @@ void CALLBACK GuiChangesCoalescingTimer(HWND hWnd, UINT, UINT_PTR id, DWORD)
             ImGui::AppReconfigure = true;
         }
     }
+
+    ImmersiveMode(hWnd);
 }
 
 LRESULT OnDpiChange(WPARAM dpi, const RECT * r)
@@ -467,6 +474,20 @@ LRESULT OnDpiChange(WPARAM dpi, const RECT * r)
 
     SetWindowPos(g_Window, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, 0);
     return 0;
+}
+
+void ImmersiveMode(HWND hWnd)
+{
+    DWORD AppsUseLightTheme;
+    DWORD AppsUseLightThemeSz = sizeof(AppsUseLightTheme);
+    if (RegGetValueW(HKEY_CURRENT_USER,
+                    L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                    L"AppsUseLightTheme",
+                    RRF_RT_DWORD, NULL, &AppsUseLightTheme, &AppsUseLightThemeSz) == ERROR_SUCCESS)
+    {
+        BOOL value = !AppsUseLightTheme;
+        DwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
+    }
 }
 
 static std::unique_ptr<wchar_t[]> utf8_to_wchar(const char *utf8str)

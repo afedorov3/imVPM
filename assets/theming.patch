@@ -1,0 +1,237 @@
+diff -Nur src/imgui/backends/win32_dx11.cpp src-theming/imgui/backends/win32_dx11.cpp
+--- src/imgui/backends/win32_dx11.cpp	2025-02-20 13:44:23.463635100 +0300
++++ src-theming/imgui/backends/win32_dx11.cpp	2025-02-20 13:45:07.934782200 +0300
+@@ -38,6 +38,7 @@
+        bool                     ImGui::SysWndFocus = false;
+        ImGui::WindowState       ImGui::SysWndState = ImGui::WSNormal;
+        float                    ImGui::SysWndScaling = 1.0f;
++       ImGui::SystemTheme       ImGui::SysTheme = STUndef;
+        bool                     ImGui::AppExit = false;
+        bool                     ImGui::AppReconfigure = false;
+ 
+@@ -56,7 +57,7 @@
+ static UINT GetDPI (HWND hWnd);
+ static void CALLBACK GuiChangesCoalescingTimer (HWND hWnd, UINT, UINT_PTR id, DWORD);
+ static LRESULT OnDpiChange(WPARAM dpi, const RECT * r);
+-void ImmersiveMode(HWND hWnd);
++bool ImmersiveMode(HWND hWnd);
+ static std::unique_ptr<wchar_t[]> utf8_to_wchar(const char *utf8str);
+ static std::unique_ptr<char[]> wchar_to_utf8(const wchar_t *wstr);
+ static std::unique_ptr<char[]> argv_wchar_to_utf8(int argc, wchar_t const *const *wargv);
+@@ -459,7 +460,7 @@
+         }
+     }
+ 
+-    ImmersiveMode(hWnd);
++    ImGui::AppReconfigure |= ImmersiveMode(hWnd);
+ }
+ 
+ LRESULT OnDpiChange(WPARAM dpi, const RECT * r)
+@@ -476,8 +477,9 @@
+     return 0;
+ }
+ 
+-void ImmersiveMode(HWND hWnd)
++bool ImmersiveMode(HWND hWnd)
+ {
++    ImGui::SystemTheme newSysTheme = ImGui::STUndef;
+     DWORD AppsUseLightTheme;
+     DWORD AppsUseLightThemeSz = sizeof(AppsUseLightTheme);
+     if (RegGetValueW(HKEY_CURRENT_USER,
+@@ -485,9 +487,18 @@
+                     L"AppsUseLightTheme",
+                     RRF_RT_DWORD, NULL, &AppsUseLightTheme, &AppsUseLightThemeSz) == ERROR_SUCCESS)
+     {
+-        BOOL value = !AppsUseLightTheme;
++        newSysTheme = AppsUseLightTheme ? ImGui::STLight : ImGui::STDark;
++    }
++
++    if (newSysTheme != ImGui::SysTheme)
++    {
++        BOOL value = newSysTheme == ImGui::STDark;
+         DwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
++        ImGui::SysTheme = newSysTheme;
++        return true;
+     }
++
++    return false;
+ }
+ 
+ static std::unique_ptr<wchar_t[]> utf8_to_wchar(const char *utf8str)
+diff -Nur src/imgui/imgui_local.h src-theming/imgui/imgui_local.h
+--- src/imgui/imgui_local.h	2025-02-20 11:51:34.253582700 +0300
++++ src-theming/imgui/imgui_local.h	2025-02-19 18:44:36.004698100 +0300
+@@ -14,6 +14,11 @@
+         WSMinimized,
+         WSMaximized,
+     };
++    enum SystemTheme {
++        STUndef,
++        STLight,
++        STDark
++    };
+ 
+     typedef void (*AppDragAndDropCb)(const char *file);
+ 
+@@ -24,6 +29,7 @@
+     extern bool SysWndFocus;                         // system window has focus
+     extern WindowState SysWndState;                  // system window state
+     extern float SysWndScaling;                      // current scaling of the window
++    extern SystemTheme SysTheme;                     // system theme preference
+     extern bool AppExit;                             // exit signal to backend
+     extern bool AppReconfigure;                      // request backend to call AppConfig()
+                                                      // backend can also set this flag on system configuration events
+diff -Nur src/imvpm.cpp src-theming/imvpm.cpp
+--- src/imvpm.cpp	2025-02-20 13:12:07.344285400 +0300
++++ src-theming/imvpm.cpp	2025-02-20 13:48:01.215286000 +0300
+@@ -421,6 +421,14 @@
+     TempoMeterMin = TempoMeterNone, // min value
+     TempoMeterDef = TempoMeter4_4   // default value
+ };
++enum {
++    UIThemeSystem = 0,              // UI theme: as system
++    UIThemeLight,                   // UI theme light
++    UIThemeDark,                    // UI theme dark
++    UIThemeMax = UIThemeDark,       // max value
++    UIThemeMin = UIThemeSystem,     // min value
++    UIThemeDef = UIThemeDark        // default value
++};
+ 
+ static bool       first_run = true;
+ static float      vol_thres = VolThresDef;
+@@ -450,6 +458,7 @@
+ static float      seek_step = SeekStepDef;
+ static bool  custom_scaling = false;
+ static float   custom_scale = 1.0f;
++static int         ui_theme = UIThemeDef;
+ static float    play_volume = 1.0f;
+ static bool            mute = false;
+ static std::string scale_str(scale_list[0]);
+@@ -514,7 +523,7 @@
+ };
+ static std::vector<ImU32> plot_colors(DefaultPlotColors);
+ 
+-std::initializer_list<ImU32> DefaultUIColors = {
++std::initializer_list<ImU32> DefaultUIColorsDark = {
+     IM_COL32(200, 200, 200, 255),
+     IM_COL32( 15,  15,  15, 240),
+     IM_COL32( 20,  20,  20, 240),
+@@ -529,6 +538,21 @@
+     IM_COL32(255, 255,  70, 255),
+     IM_COL32(100, 100, 100, 255)
+ };
++std::initializer_list<ImU32> DefaultUIColorsLight = {
++    IM_COL32( 55,  55,  55, 255),
++    IM_COL32(240, 240, 240, 240),
++    IM_COL32(235, 235, 235, 240),
++    IM_COL32( 55,  55,  55, 255),
++    IM_COL32(  0,   0,   0,   0),
++    IM_COL32(255, 255, 255,  30),
++    IM_COL32(255, 255, 255,  60),
++    IM_COL32(255,   0,  50, 200),
++    IM_COL32(200,   0,  40, 255),
++    IM_COL32(255,   0,  50, 255),
++    IM_COL32(255,  60,  60, 255),
++    IM_COL32(255, 255,  70, 255),
++    IM_COL32(100, 100, 100, 255)
++};
+ enum {
+     UIIdxText = 0,
+     UIIdxWndBg,
+@@ -544,7 +568,7 @@
+     UIIdxMsgWarn,
+     UIIdxMsgDbg
+ };
+-static std::vector<ImU32> UI_colors(DefaultUIColors);
++static std::vector<ImU32> UI_colors(DefaultUIColorsDark);
+ 
+ // STATE
+ static ImFont      *font_def =  nullptr;  // default font ptr
+@@ -748,6 +772,11 @@
+     return str.substr(0, last_pos) + "…";
+ }
+ 
++static inline bool IsColorLight(ImVec4 &clr)
++{
++    return (((5 * clr.x) + (2 * clr.y) + clr.z) > (8 * 0.5f));
++}
++
+ static void AddNoteLabel(ImVec2 at, int alignH, int alignV, int note, int sharpidx, int octave, ImU32 color, ImDrawList* draw_list)
+ {
+     static char label[16];
+@@ -1144,6 +1173,7 @@
+             GETVAL("imvpm", seek_step, SeekStepMin, SeekStepMax);
+             GETVAL("imvpm", custom_scaling);
+             GETVAL("imvpm", custom_scale, CustomScaleMin, CustomScaleMax);
++            GETVAL("imvpm", ui_theme, UIThemeMin, UIThemeMax);
+             GETVAL("imvpm", play_volume, 0.0f, 1.0f);
+             GETVAL("imvpm", mute);
+             GETVAL("imvpm", scale_str, (const char**)scale_list, IM_ARRAYSIZE(scale_list));
+@@ -1243,6 +1273,7 @@
+     SETVAL ("imvpm", seek_step, "%0.1f");
+     SETBOOL("imvpm", custom_scaling);
+     SETVAL ("imvpm", custom_scale, "%0.1f");
++    SETVAL ("imvpm", ui_theme, "%d");
+     SETVAL ("imvpm", play_volume, "%0.3f");
+     SETBOOL("imvpm", mute);
+     ini.SetValue("imvpm", "scale_str", scale_str.c_str());
+@@ -1307,6 +1338,9 @@
+         ImGui::AppReconfigure = true;
+     custom_scaling = false;
+     custom_scale = 1.0f;
++    if (ui_theme != UIThemeDef)
++        ImGui::AppReconfigure = true;
++    ui_theme = UIThemeDef;
+     scale_str = scale_list[0];
+     ImGui::SysWndBgColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+     plot_colors = DefaultPlotColors;
+@@ -1519,6 +1553,17 @@
+     else
+         ui_scale = ImGui::SysWndScaling;
+ 
++    if (ui_theme == UIThemeLight || (ui_theme == UIThemeSystem && ImGui::SysTheme == ImGui::STLight))
++    {
++        ImGui::StyleColorsLight();
++        UI_colors = DefaultUIColorsLight;
++    }
++    else
++    {
++        ImGui::StyleColorsDark();
++        UI_colors = DefaultUIColorsDark;
++    }
++
+     ImGuiIO &io = ImGui::GetIO();
+ 
+     io.IniFilename = nullptr;
+@@ -1596,6 +1641,8 @@
+     style.Colors[ImGuiCol_Text] = ImColor(UI_colors[UIIdxText]);
+     style.Colors[ImGuiCol_WindowBg] = ImColor(UI_colors[UIIdxWndBg]);
+     style.Colors[ImGuiCol_PopupBg] = ImColor(UI_colors[UIIdxPopBg]);
++    // override widget text color basing on plot background
++    UI_colors[UIIdxWidgetText] = std::data(IsColorLight(ImGui::SysWndBgColor) ? DefaultUIColorsLight : DefaultUIColorsDark)[UIIdxWidgetText];
+ 
+     widget_padding = font_widget_sz * ui_scale / 5;
+     widget_sz = ImVec2(font_widget_sz * ui_scale + widget_padding * 2, font_widget_sz * ui_scale + widget_padding * 2);
+@@ -2881,6 +2928,13 @@
+             ImGui::AppReconfigure = true;
+         if (!custom_scaling)
+             ImGui::EndDisabled();
++        ImGui::BeginGroup();
++        ImGui::AlignTextToFramePadding();
++        ImGui::TextUnformatted("UI theme");
++        ImGui::SameLine(); ImGui::AppReconfigure |= ImGui::RadioButton("System", &ui_theme, UIThemeSystem);
++        ImGui::SameLine(); ImGui::AppReconfigure |= ImGui::RadioButton("Light", &ui_theme, UIThemeLight);
++        ImGui::SameLine(); ImGui::AppReconfigure |= ImGui::RadioButton("Dark", &ui_theme, UIThemeDark);
++        ImGui::EndGroup();
+         ImGui::Unindent();
+     }
+ 
+@@ -2911,6 +2965,8 @@
+             if (newcol.w < 1.0f && ImGui::SysWndBgColor.w == 1.0f)
+                 tooltiptime = time + 2.0;
+             ImGui::SysWndBgColor = newcol;
++            // override widget text color basing on plot background
++            UI_colors[UIIdxWidgetText] = std::data(IsColorLight(ImGui::SysWndBgColor) ? DefaultUIColorsLight : DefaultUIColorsDark)[UIIdxText];
+         }
+         if (tooltiptime > time)
+         {

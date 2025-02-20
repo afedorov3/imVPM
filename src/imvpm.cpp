@@ -35,6 +35,7 @@
 
 Index of this file:
 
+// [SECTION] Helper classes
 // [SECTION] App state
 // [SECTION] Forward declarations
 // [SECTION] Helpers
@@ -416,8 +417,8 @@ enum {                              // plot: tempo metering scheme
     TempoMeterNone = 0,               // None
     TempoMeter3_4  = 3,               // 3/4
     TempoMeter4_4  = 4,               // 4/4
-    TempoMeterMax = TempoMeter4_4,  // max_value
-    TempoMeterMin = 0,              // min value
+    TempoMeterMax = TempoMeter4_4,  // max value
+    TempoMeterMin = TempoMeterNone, // min value
     TempoMeterDef = TempoMeter4_4   // default value
 };
 
@@ -509,12 +510,14 @@ enum {
     PlotIdxPitch,
     PlotIdxMetronome,
     PlotIdxNote,
-    PlotIdxTuner,
-    PlotLineWidthCount = IM_ARRAYSIZE(lut_linew)
+    PlotIdxTuner
 };
 static std::vector<ImU32> plot_colors(DefaultPlotColors);
 
 std::initializer_list<ImU32> DefaultUIColors = {
+    IM_COL32(200, 200, 200, 255),
+    IM_COL32( 15,  15,  15, 240),
+    IM_COL32( 20,  20,  20, 240),
     IM_COL32(200, 200, 200, 255),
     IM_COL32(  0,   0,   0,   0),
     IM_COL32(255, 255, 255,  30),
@@ -527,7 +530,10 @@ std::initializer_list<ImU32> DefaultUIColors = {
     IM_COL32(100, 100, 100, 255)
 };
 enum {
-    UIIdxDefault = 0,
+    UIIdxText = 0,
+    UIIdxWndBg,
+    UIIdxPopBg,
+    UIIdxWidgetText,
     UIIdxWidget,
     UIIdxWidgetHovered,
     UIIdxWidgetActive,
@@ -1313,7 +1319,7 @@ static void ResetSettings()
     AdjustVolume();
 }
 
-static bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxDefault], bool disabled = false)
+static bool ButtonWidget(const char* text, ImU32 color = UI_colors[UIIdxWidgetText], bool disabled = false)
 {
     bool ret;
 
@@ -1587,7 +1593,9 @@ bool ImGui::AppConfig(bool startup)
     style.GrabMinSize   = 15.0f * ui_scale;
     style.SeparatorTextAlign = ImVec2(0.5f, 0.75f);
     style.ColorButtonPosition = ImGuiDir_Left;
-    style.Colors[ImGuiCol_Text] = ImColor(UI_colors[UIIdxDefault]);
+    style.Colors[ImGuiCol_Text] = ImColor(UI_colors[UIIdxText]);
+    style.Colors[ImGuiCol_WindowBg] = ImColor(UI_colors[UIIdxWndBg]);
+    style.Colors[ImGuiCol_PopupBg] = ImColor(UI_colors[UIIdxPopBg]);
 
     widget_padding = font_widget_sz * ui_scale / 5;
     widget_sz = ImVec2(font_widget_sz * ui_scale + widget_padding * 2, font_widget_sz * ui_scale + widget_padding * 2);
@@ -1732,7 +1740,7 @@ void ImGui::AppNewFrame()
         {
             pos.x -= widget_sz.x + widget_margin;
             ImGui::SetCursorPos(pos);
-            ButtonWidget(ICON_FA_HAND, GetColorU32(UI_colors[UIIdxDefault], 0.5f), true);
+            ButtonWidget(ICON_FA_HAND, GetColorU32(UI_colors[UIIdxWidgetText], 0.5f), true);
         }
 
         // audio control
@@ -1838,7 +1846,7 @@ static void Menu()
 
 static void CaptureDevices()
 {
-    if (ButtonWidget(ICON_FA_MICROPHONE, ah_state.isCapOrRec() ? UI_colors[UIIdxCapture] : UI_colors[UIIdxDefault]))
+    if (ButtonWidget(ICON_FA_MICROPHONE, ah_state.isCapOrRec() ? UI_colors[UIIdxCapture] : UI_colors[UIIdxWidgetText]))
     {
         audiohandler.enumerate();
         ImGui::OpenPopup("##CaptureDevicesPopup");
@@ -2006,7 +2014,7 @@ static void TempoControl()
     snprintf(label, 4, "%3d", tempo_val);
     label[3] = '\n';
     ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxDefault], 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxWidgetText], 0.5f));
     ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
@@ -2036,6 +2044,7 @@ static void ScaleSelector(bool from_settings)
     {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(menu_spacing, menu_spacing));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(menu_spacing, menu_spacing));
+        ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor(UI_colors[UIIdxWidgetText]));
         ImGui::PushStyleColor(ImGuiCol_FrameBg, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
@@ -2043,6 +2052,7 @@ static void ScaleSelector(bool from_settings)
     }
     if (ImGui::BeginCombo("##ScaleSelector", scale_str.c_str(), flags))
     {
+        ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor(UI_colors[UIIdxText]));
         for (int n = 0; n < IM_ARRAYSIZE(scale_list); n++)
         {
             const bool is_selected = scale_str.compare(0, std::string::npos, scale_list[n]) == 0;
@@ -2056,18 +2066,19 @@ static void ScaleSelector(bool from_settings)
             if (is_selected)
                 ImGui::SetItemDefaultFocus();
         }
+        ImGui::PopStyleColor();
         ImGui::EndCombo();
     }
     if (!from_settings)
     {
-        ImGui::PopStyleColor(3);
+        ImGui::PopStyleColor(4);
         ImGui::PopStyleVar(2);
     }
 }
 
 static void HoldButton()
 {
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxDefault], 1.0f - 0.5f * !analyzer.on_hold()));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxWidgetText], 1.0f - 0.5f * !analyzer.on_hold()));
     ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
@@ -2139,7 +2150,7 @@ static bool ColorPicker(const char *label, ImU32 &color, float split, bool alpha
         ImVec2 preview_sz = (item_sz + ImGui::GetStyle().ItemSpacing) * row_sz;
         preview_sz.y *= font_def_sz / 32.0f; // adjust for best fit
 
-        ImGui::Text("Pick a color");
+        ImGui::TextUnformatted("Pick a color");
         ImGui::Separator();
         if (ImGui::ColorPicker4("##ColorPicker", (float*)&col, flags | ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoSmallPreview))
         {
@@ -2149,16 +2160,16 @@ static bool ColorPicker(const char *label, ImU32 &color, float split, bool alpha
         ImGui::SameLine();
 
         ImGui::BeginGroup(); // Lock X position
-        ImGui::Text("Current");
+        ImGui::TextUnformatted("Current");
         ImGui::ColorButton("##CurrentColor", col, flags | ImGuiColorEditFlags_NoPicker, preview_sz);
-        ImGui::Text("Previous");
+        ImGui::TextUnformatted("Previous");
         if (ImGui::ColorButton("##PreviousColor", backup_color, flags | ImGuiColorEditFlags_NoPicker, preview_sz))
         {
             color = backup_color;
             ret = true;
         }
         ImGui::Separator();
-        ImGui::Text("Palette");
+        ImGui::TextUnformatted("Palette");
         for (int n = 0; n < ColorCount; n++)
         {
             ImGui::PushID(n);
@@ -2560,7 +2571,7 @@ static void ProcessLog()
 
     static unsigned long long nextN = maxMsgs;
     static double MsgTimeout[maxMsgs] = {};
-    static const ImU32* const msg_colors[LOG_MAXLVL + 1] = { &UI_colors[UIIdxMsgErr], &UI_colors[UIIdxMsgWarn], &UI_colors[UIIdxDefault], &UI_colors[UIIdxMsgDbg] };
+    static const ImU32* const msg_colors[LOG_MAXLVL + 1] = { &UI_colors[UIIdxMsgErr], &UI_colors[UIIdxMsgWarn], &UI_colors[UIIdxWidgetText], &UI_colors[UIIdxMsgDbg] };
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     ImVec2 pos = ImGui::GetWindowSize();
@@ -2676,7 +2687,7 @@ static void SpectrumWindow(bool *show)
     {
         out_smooth[i] += (out_log[i] - out_smooth[i]) * smoothness * dt;
         rmin.y = rmax.y - std::fmax(margin, out_smooth[i] * height);
-        draw_list->AddRectFilled(rmin, rmax, (int)i == n_peak ? plot_colors[PlotIdxPitch] : UI_colors[UIIdxDefault]);
+        draw_list->AddRectFilled(rmin, rmax, (int)i == n_peak ? plot_colors[PlotIdxPitch] : UI_colors[UIIdxText]);
         rmin.x += adv;
         rmax.x += adv;
     }
@@ -2890,18 +2901,32 @@ static void SettingsWindow()
     // color settings
     {
         ImGui::TextUnformatted("Colors");
-        enum { CloseNone = 0, CloseScale, CloseChromatic };
-        static int closenode = CloseNone;
 
         ImGui::Indent();
+        static double tooltiptime = 0.0;
         ImU32 bgcolor = ImColor(ImGui::SysWndBgColor);
         if (ColorPicker("Background", bgcolor, -FLT_MIN, true))
-            ImGui::SysWndBgColor = ImColor(bgcolor);
+        {
+            ImVec4 newcol = ImColor(bgcolor);
+            if (newcol.w < 1.0f && ImGui::SysWndBgColor.w == 1.0f)
+                tooltiptime = time + 2.0;
+            ImGui::SysWndBgColor = newcol;
+        }
+        if (tooltiptime > time)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, UI_colors[UIIdxMsgWarn]);
+            ImGui::SetTooltip("Enabling transparency\nrequires app restart");
+            ImGui::PopStyleColor();
+        }
         ColorPicker("Pitch", plot_colors[PlotIdxPitch], -FLT_MIN);
         ColorPicker("Tempo", plot_colors[PlotIdxTempo], -FLT_MIN);
         ColorPicker("Metronome", plot_colors[PlotIdxMetronome], -FLT_MIN);
+        ColorPicker("Note", plot_colors[PlotIdxNote], -FLT_MIN);
+        ColorPicker("Tuner", plot_colors[PlotIdxTuner], -FLT_MIN);
         ImGui::Unindent();
 
+        enum { CloseNone = 0, CloseScale, CloseChromatic };
+        static int closenode = CloseNone;
         if (closenode == CloseScale)
             ImGui::SetNextItemOpen(false);
         if (ImGui::TreeNodeEx("Scale##Colors", scale_chroma ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen))
