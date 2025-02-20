@@ -101,7 +101,7 @@ that you provide in the **external** directory.
 List of required dependencies:
 |dir name|URL|commit|version
 |--------------:|:-------------------------------|:---------|:---------|
-|          imgui|https://github.com/ocornut/imgui|80c9cd1|v1.91.7|
+|          imgui|https://github.com/ocornut/imgui|80c9cd1|v1.91.8|
 |      miniaudio|https://github.com/mackron/miniaudio|4a5b74b|0.11.21|
 |          fft4g|https://github.com/YSRKEN/Ooura-FFT-Library-by-Other-Language|4a2dccf|
 |      simpleini|https://github.com/brofield/simpleini|6048871|v4.22|

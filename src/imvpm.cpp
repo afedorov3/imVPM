@@ -363,30 +363,30 @@ static constexpr float PlotYScrlSpd =    50.0f;  // plot: vertical mouse scroll 
 static constexpr bool  PlotAScrlDef =     true;  // plot: vertical autoscroll enabled by default
 static constexpr int   PlotAScrlVelMax =    10;  // plot: vertical autoscroll max value, Cents
 static constexpr int   PlotAScrlVelMin =     1;  // plot: vertical autoscroll min value, Cents
-static constexpr int   PlotAScrlVelDef =     3;  // plot: vertical autoscroll, Cents, default value [3]
+static constexpr int   PlotAScrlVelDef =     3;  // plot: vertical autoscroll velocity, Cents, default value [3]
 static constexpr int   PlotAScrlMar =      100;  // plot: vertical autoscroll margin, Cents
 static constexpr double PlotAScrlGrace =   3.0;  // plot: vertical autoscroll grace period, seconds
 static constexpr bool  PlotRulRightDef = false;  // plot: ruller on the right side, default value [false]
 static constexpr bool  PlotSemiLinesDef = true;  // plot: draw semitone lines if not on Chromatic scale, default value
-static constexpr bool  PlotSemiLblsDef = false;  // plot: draw semitone label, default value
+static constexpr bool  PlotSemiLblsDef = false;  // plot: show semitone labels, default value
 static constexpr bool  ShowFreqDef =     false;  // show average pitch frequency by default [false]
 static constexpr bool  ShowTunerDef =     true;  // show tuner by default [true]
 static constexpr int   TunerSmoothMax =      5;  // tuner smoothing samples max value
 static constexpr int   TunerSmoothMin =      1;  // tuner smoothing samples min value
 static constexpr int   TunerSmoothDef =      3;  // tuner smoothing samples, default value [3]
 static constexpr bool  MetronomeDef =    false;  // metronome pulse by default [false]
-static constexpr int   TempoValueMax =     250;  // tempo max value, beats per minute
-static constexpr int   TempoValueMin =      20;  // tempo min value, beats per minute
-static constexpr int   TempoValueDef =     120;  // tempo, beats per minute, default value [120]
+static constexpr int   TempoValueMax =     250;  // plot: tempo max value, beats per minute
+static constexpr int   TempoValueMin =      20;  // plot: tempo min value, beats per minute
+static constexpr int   TempoValueDef =     120;  // plot: tempo, beats per minute, default value [120]
 static constexpr bool  TempoGridDef =    false;  // plot: draw tempo grid by default [false]
-static constexpr bool  ButtonHoldDef =    true;  // UI: show hold button by default [true]
+static constexpr bool  ButtonHoldDef =    true;  // UI: show HOLD button by default [true]
 static constexpr bool  ButtonScaleDef =   true;  // UI: show scale selector by default [true]
-static constexpr bool  ButtonTempoDef =   true;  // UI: show tempo selector by default [true]
+static constexpr bool  ButtonTempoDef =   true;  // UI: show tempo settings button by default [true]
 static constexpr bool  ButtonDevsDef =    true;  // UI: show device selector by default [true]
 static constexpr bool  ClickToHoldDef =   true;  // UI: click on canvas to toggle hold / pause [true]
 static constexpr float SeekStepMax =     30.0f;  // UI: seek step maximum, seconds
 static constexpr float SeekStepMin =      0.5f;  // UI: seek step minimum, seconds
-static constexpr float SeekStepDef =      5.0f;  // UI: seek step minimum default value, seconds
+static constexpr float SeekStepDef =      5.0f;  // UI: seek step default value, seconds
 static constexpr float CustomScaleMax =   4.0f;  // UI: custom scaling maximum value
 static constexpr float CustomScaleMin =   0.5f;  // UI: custom scaling minimum value
 
@@ -423,37 +423,37 @@ enum {                              // plot: tempo metering scheme
 };
 
 static bool       first_run = true;
-static float      vol_thres = VolThresDef;
-static float         x_zoom = PlotXZoomDef;
-static float         y_zoom = PlotYZoomDef;
-static float          c_pos = PlotPosDef;        // plot current bottom position, Cents
-static bool       rul_right = PlotRulRightDef;   // vertical axis ruler position
-static bool      semi_lines = PlotSemiLinesDef;
-static bool       semi_lbls = PlotSemiLblsDef;
-static int       oct_offset = OctOffsetDef;
-static float    calibration = PitchCalibDef;
-static int        transpose = TransposeDef;
-static bool      autoscroll = PlotAScrlDef;
-static int      y_ascrl_vel = PlotAScrlVelDef;
-static bool       show_freq = ShowFreqDef;
-static bool      show_tuner = ShowTunerDef;
-static int       note_names = NoteNamesDef;
-static bool       metronome = MetronomeDef;
-static int        tempo_val = TempoValueDef;
-static bool      tempo_grid = TempoGridDef;
-static int      tempo_meter = TempoMeterDef;
-static bool        but_hold = ButtonHoldDef;
-static bool       but_scale = ButtonScaleDef;
-static bool       but_tempo = ButtonTempoDef;
-static bool     but_devices = ButtonDevsDef;
-static bool      click_hold = ClickToHoldDef;
-static float      seek_step = SeekStepDef;
-static bool  custom_scaling = false;
-static float   custom_scale = 1.0f;
-static float    play_volume = 1.0f;
-static bool            mute = false;
-static std::string scale_str(scale_list[0]);
-static char record_dir[PATH_MAX] = {};
+static float      vol_thres = VolThresDef;       // Analyzer: volume threshold
+static float         x_zoom = PlotXZoomDef;      // plot: horizontal zoom, px
+static float         y_zoom = PlotYZoomDef;      // plot: vertical zoom, ruler font heights
+static float          c_pos = PlotPosDef;        // plot: current bottom position, Cents
+static bool       rul_right = PlotRulRightDef;   // plot: vertical axis ruler position
+static bool      semi_lines = PlotSemiLinesDef;  // plot: draw semitone lines
+static bool       semi_lbls = PlotSemiLblsDef;   // plot: show semitone labels
+static int       oct_offset = OctOffsetDef;      // plot: octave offset
+static float    calibration = PitchCalibDef;     // plot: pitch calibration value, Hz
+static int        transpose = TransposeDef;      // plot: scale transpose, Keys
+static bool      autoscroll = PlotAScrlDef;      // plot: vertical autoscroll enabled
+static int      y_ascrl_vel = PlotAScrlVelDef;   // plot: vertical autoscroll velocity, Cents
+static bool       show_freq = ShowFreqDef;       // show average pitch frequency
+static bool      show_tuner = ShowTunerDef;      // show tuner
+static int       note_names = NoteNamesDef;      // note naming scheme
+static bool       metronome = MetronomeDef;      // metronome pulse enabled
+static int        tempo_val = TempoValueDef;     // plot: tempo value, beats per minute
+static bool      tempo_grid = TempoGridDef;      // plot: show tempo grid
+static int      tempo_meter = TempoMeterDef;     // plot: tempo meter
+static bool        but_hold = ButtonHoldDef;     // UI: show HOLD button
+static bool       but_scale = ButtonScaleDef;    // UI: show scale selector
+static bool       but_tempo = ButtonTempoDef;    // UI: show tempo settings button
+static bool     but_devices = ButtonDevsDef;     // UI: show device selector
+static bool      click_hold = ClickToHoldDef;    // UI: click on canvas to toggle hold / pause
+static float      seek_step = SeekStepDef;       // UI: seek step value, seconds
+static bool  custom_scaling = false;             // UI: custom scaling enabled 
+static float   custom_scale = 1.0f;              // UI: custom scaling value
+static float    play_volume = 1.0f;              // playback volume
+static bool            mute = false;             // playback muted
+static std::string scale_str(scale_list[0]);     // scale selected
+static char record_dir[PATH_MAX] = {};           // record directory path
 
 // Plot palete, fixed order up to and including pitch
 std::initializer_list<ImU32> DefaultPlotColors = {
@@ -1944,7 +1944,7 @@ static void AudioControl()
     {
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         ImColor color = UI_colors[UIIdxRecord];
-        float mul = 1.0f - 0.5f * !can_record;
+        float mul = 0.5f + 0.5f * can_record;
         if (ah_state.isRecording())
             mul *= std::sin((float)ImGui::GetTime() * (float)M_PI * 2.0f) * 0.2f + 0.8f;
         color.Value.x *= mul;
@@ -2014,7 +2014,7 @@ static void TempoControl()
     snprintf(label, 4, "%3d", tempo_val);
     label[3] = '\n';
     ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxWidgetText], 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxWidgetText], 0.5f + 0.5f * (metronome || tempo_grid)));
     ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
@@ -2044,7 +2044,7 @@ static void ScaleSelector(bool from_settings)
     {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(menu_spacing, menu_spacing));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(menu_spacing, menu_spacing));
-        ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor(UI_colors[UIIdxWidgetText]));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxWidgetText], 0.8f));
         ImGui::PushStyleColor(ImGuiCol_FrameBg, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
@@ -2078,7 +2078,7 @@ static void ScaleSelector(bool from_settings)
 
 static void HoldButton()
 {
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxWidgetText], 1.0f - 0.5f * !analyzer.on_hold()));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(UI_colors[UIIdxWidgetText], 0.5f + 0.5f * analyzer.on_hold()));
     ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor(UI_colors[UIIdxWidget]));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor(UI_colors[UIIdxWidgetHovered]));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor(UI_colors[UIIdxWidgetActive]));
