@@ -719,6 +719,7 @@ void AudioHandler::commandProc()
             decoderConfig.customBackendCount     = sizeof(pCustomBackendVTables) / sizeof(pCustomBackendVTables[0]);
  #endif // defined(HAVE_OPUS)
 
+            pc.encoder = nullptr;
             pc.decoder = ma_unique_decoder(new ma_decoder());
             if (!pc.decoder
                 || (result = decoder_init_file(pc.lastFileName.c_str(), &decoderConfig, pc.decoder.get())) != MA_SUCCESS) {
@@ -744,8 +745,9 @@ void AudioHandler::commandProc()
                 pc.stateError = ErrorInvalidSequence;
                 break;
             }
-            if (pc.state.isRecording()) // stop recording
-                pc.encoder = nullptr;
+
+            pc.decoder = nullptr;
+            pc.encoder = nullptr;
 
             pc.state = StateCapture|StatePause;
             pc.cmdQueue.internalCommand(CmdResume);
@@ -763,6 +765,7 @@ void AudioHandler::commandProc()
 
             encoderConfig = ma_encoder_config_init(ma_encoding_format_wav, recordFormat, channels, sampleRateHz);
 
+            pc.decoder = nullptr;
             pc.encoder = ma_unique_encoder(new ma_encoder());
             if (!pc.encoder
                 || (result = encoder_init_file(pc.lastFileName.c_str(), &encoderConfig, pc.encoder.get())) != MA_SUCCESS) {

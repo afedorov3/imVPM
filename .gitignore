@@ -1,6 +1,7 @@
 .vscode
 archive
 assets/ah
+assets/experimental
 assets/reverse
 assets/test-data
 assets/*.cmd

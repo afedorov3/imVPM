@@ -29,11 +29,11 @@ namespace ImGui
                                                      // backend can also set this flag on system configuration events
 
     // App functions
-    int  AppInit(int argc, char const *const* argv); // called once at the start of main() function
+    int  AppInit(int argc, char const *const* argv); // called once at the start of main() function, non-zero return aborts the app
     bool AppConfig(bool startup);                    // called before NewFrame at startup and after system settings has changed
                                                      // if true is returned, fonts texture will be updated
                                                      // do not call directly from the app, set AppReconfigure flag instead
-    void AppNewFrame();                              // called After NewFrame at every frame
+    void AppNewFrame();                              // called after NewFrame every frame
     void AppDestroy();                               // called once just after the main loop
 
     // Backend functions

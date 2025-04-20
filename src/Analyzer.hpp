@@ -172,7 +172,7 @@ protected:
         }
         fft.rdft(-1, acf_data.get());
 
-        if (sqrt(acf_data[0]) >= threshold)
+        if (std::sqrt(acf_data[0]) >= threshold)
             peak_freq = detect_pitch();
         else
             peak_freq = -1.0;
@@ -370,8 +370,8 @@ public:
     {
         pitch_buf_pos = 0;
         total_analyze_cnt = 0;
-        const float intervals = float(ANALYZER_ANALYZE_FREQ) * 120.0f / (float)BPM;
-        for (size_t i = 0; i < Analyzer::PITCH_BUF_SIZE; i++)
+        const float intervals = float(SAMPLE_FREQ / ANALYZE_INTERVAL) * 120.0f / (float)BPM;
+        for (size_t i = 0; i < PITCH_BUF_SIZE; i++)
         {
             pitch_buf[pitch_buf_pos] = std::fmod((double)total_analyze_cnt, intervals) < intervals / 2.0f ? 4500.0f : 4450.0f;
             pitch_buf_pos = (pitch_buf_pos + 1) % PITCH_BUF_SIZE;
@@ -381,8 +381,8 @@ public:
 
         // current, start, end markers
         pitch_buf[pitch_buf_pos] = 4600.0f;
-        pitch_buf[(pitch_buf_pos + 1) % Analyzer::PITCH_BUF_SIZE] = 4300.0f;
-        pitch_buf[(pitch_buf_pos + Analyzer::PITCH_BUF_SIZE - 1) % Analyzer::PITCH_BUF_SIZE] = 4400.0f;
+        pitch_buf[(pitch_buf_pos + 1) % PITCH_BUF_SIZE] = 4300.0f;
+        pitch_buf[(pitch_buf_pos + PITCH_BUF_SIZE - 1) % PITCH_BUF_SIZE] = 4400.0f;
     }
 #endif // ANALYZER_DEBUG
 };
@@ -398,7 +398,7 @@ const double Analyzer::FREQ_C1 = std::pow(2.0, (-9.0/12.0)) * FREQ_A1;
 const double Analyzer::LOG2_FREQ_C1 = std::log2(FREQ_C1);
 
 const double Analyzer::SAMPLE_FREQ = ANALYZER_SAMPLE_FREQ;
-const size_t Analyzer::FFTSIZE = (size_t)std::pow(2.0, (size_t)std::log2((double)(ANALYZER_SAMPLE_FREQ) / (sharp_of(ANALYZER_BASE_FREQ) - (ANALYZER_BASE_FREQ))) + 1);
+const size_t Analyzer::FFTSIZE = (size_t)std::pow(2.0, std::ceil(std::log2((double)(ANALYZER_SAMPLE_FREQ) / (sharp_of(ANALYZER_BASE_FREQ) - (ANALYZER_BASE_FREQ)))));
 const size_t Analyzer::ANALYZE_INTERVAL = (size_t)((double)(ANALYZER_SAMPLE_FREQ) / (ANALYZER_ANALYZE_FREQ));
 const size_t Analyzer::PITCH_BUF_SIZE = (ANALYZER_ANALYZE_FREQ) * (ANALYZER_ANALYZE_SPAN);
 

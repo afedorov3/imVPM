@@ -19,7 +19,7 @@ Other software used to create this project:
 Recording formats supported:  
 WAV  
 Playback formats supported:  
-WAV MP3 OGG FLAC OPUS  
+WAV MP3 OGG-Vorbis FLAC OPUS  
 Default recording path is home directory, you could change it in the settings.  
 
 The program saves it's configuration to %APPDATA%\imvpmrc on Windows and ~/.config/imvpmrc on Linux.  
